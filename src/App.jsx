@@ -88,16 +88,15 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, async (u) => {
       const reqId = ++currentReq;
       if (u) {
-        // Force a fresh login after a redeploy: if this build is newer than the
-        // one the session was created under, sign out and bounce to the login
-        // screen. (signOut re-fires this handler with u=null.)
-        const seenBuild = localStorage.getItem('ms_admin_build_id');
-        if (seenBuild && seenBuild !== __BUILD_ID__) {
-          localStorage.setItem('ms_admin_build_id', __BUILD_ID__);
+        // Force a fresh login after a redeploy. The build id is stamped at login
+        // time (Login.jsx, right before sign-in), so any restored session whose
+        // stored id doesn't match this running build — including sessions created
+        // before this feature existed (no id stored at all) — is treated as stale
+        // and bounced to the login screen. (signOut re-fires this handler with u=null.)
+        if (localStorage.getItem('ms_admin_build_id') !== __BUILD_ID__) {
           await signOut(auth);
           return;
         }
-        localStorage.setItem('ms_admin_build_id', __BUILD_ID__);
 
         setLoading(true); // Prevent UI from rendering before claims are checked
         try {
