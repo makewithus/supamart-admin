@@ -67,7 +67,7 @@ export default function Offers() {
   const isExpired = (o) => o.validTo && o.validTo < Date.now();
 
   return (
-    <div className="p-8 bg-neutral-50 min-h-screen">
+    <div className="p-4 sm:p-6 lg:p-8 bg-neutral-50 min-h-screen">
       <PageHeader title="Offers & Coupons" subtitle={`${offers.length} offers`}>
         <Button variant="primary" onClick={handleAddClick}>
           <Plus size={16} strokeWidth={2.5} /> Add Offer

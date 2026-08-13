@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Package, Plus, Search, Image, Edit2, Trash2 } from 'lucide-react';
 import { db } from '../config/firebase';
 import { collection, query, orderBy } from 'firebase/firestore';
@@ -8,6 +8,7 @@ import Button from '../components/ui/Button';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import PageHeader from '../components/ui/PageHeader';
+import productImages from '../utils/productImages';
 import Modal from '../components/ui/Modal';
 import ConfirmModal from '../components/ui/ConfirmModal';
 import ProductForm from '../components/ProductForm';
@@ -23,7 +24,8 @@ const AVAIL_BADGE = {
 
 export default function Products() {
   const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState({});
+  const [categories, setCategories] = useState([]); // full docs, so ProductForm can render hierarchy
+  const [brands, setBrands] = useState([]);
   const [search, setSearch]     = useState('');
   const [loading, setLoading]   = useState(true);
 
@@ -31,11 +33,25 @@ export default function Products() {
   const [editingProduct, setEditingProduct] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
+  // Memoized so typing in the search box (which re-renders this component on every
+  // keystroke) doesn't rebuild these lookup maps from scratch each time — only
+  // recomputed when the underlying categories/brands listeners actually push new data.
+  const categoryNameById = useMemo(
+    () => Object.fromEntries(categories.map((c) => [c.id, c.name])),
+    [categories]
+  );
+  const brandNameById = useMemo(
+    () => Object.fromEntries(brands.map((b) => [b.id, b.name])),
+    [brands]
+  );
+
   useEffect(() => {
     const unsubCats = onSnapshot(collection(db, 'categories'), (snap) => {
-      const catMap = {};
-      snap.docs.forEach((d) => { catMap[d.id] = d.data().name; });
-      setCategories(catMap);
+      setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+
+    const unsubBrands = onSnapshot(collection(db, 'brands'), (snap) => {
+      setBrands(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
 
     const q = query(collection(db, 'products'), orderBy('createdAt', 'desc'));
@@ -50,6 +66,7 @@ export default function Products() {
 
     return () => {
       unsubCats();
+      unsubBrands();
       unsubProds();
     };
   }, []);
@@ -76,8 +93,9 @@ export default function Products() {
     setIsModalOpen(true);
   };
 
-  const filtered = products.filter((p) =>
-    !search || p.name?.toLowerCase().includes(search.toLowerCase())
+  const filtered = useMemo(
+    () => products.filter((p) => !search || p.name?.toLowerCase().includes(search.toLowerCase())),
+    [products, search]
   );
 
   const minPrice = (p) => {
@@ -88,7 +106,7 @@ export default function Products() {
   const totalStock = (p) => (p.variants || []).reduce((s, v) => s + (v.stock || 0), 0);
 
   return (
-    <div className="p-8 bg-neutral-50 min-h-screen">
+    <div className="p-4 sm:p-6 lg:p-8 bg-neutral-50 min-h-screen">
       <PageHeader title="Products" subtitle={`${products.length} items in catalog`}>
         <Button variant="primary" size="md" onClick={handleAddClick}>
           <Plus size={16} strokeWidth={2.5} /> Add Product
@@ -97,8 +115,8 @@ export default function Products() {
 
       <Card>
         {/* Search */}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="relative flex-1 max-w-sm">
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
               type="text"
@@ -119,7 +137,7 @@ export default function Products() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100">
-                  {['Product', 'Category', 'Price from', 'Stock', 'Status', ''].map((h) => (
+                  {['Product', 'Category', 'Brand', 'Price from', 'Stock', 'Status', ''].map((h) => (
                     <th key={h} className="px-6 py-3.5 text-left text-[11px] font-semibold uppercase tracking-widest text-neutral-400">{h}</th>
                   ))}
                 </tr>
@@ -127,16 +145,21 @@ export default function Products() {
               <tbody>
                 {filtered.map((p) => {
                   const s = AVAIL_BADGE[p.availability] || { label: p.availability || '—', v: 'neutral' };
-                  const img = p.images?.[0]?.url || p.images?.[0];
+                  // Real admin-uploaded photo (not the generic shared Cloudinary seed
+                  // stock photo) wins over the bundled one — lets an admin swap in a
+                  // real picture (e.g. new packaging) from ProductForm without a rebuild.
+                  const rawImg = p.images?.[0]?.url || p.images?.[0];
+                  const isGenericStock = rawImg && /res\.cloudinary\.com\/demo\//.test(rawImg);
+                  const img = (rawImg && !isGenericStock) ? rawImg : (productImages[p.name] || null);
                   const stock = totalStock(p);
                   return (
                     <tr key={p.id} className="border-b border-neutral-50 hover:bg-neutral-50/80 transition-colors group">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-neutral-100 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                          <div className="w-16 h-16 rounded-xl bg-neutral-100 flex-shrink-0 overflow-hidden flex items-center justify-center">
                             {img
-                              ? <img src={img} alt={p.name} className="w-full h-full object-cover" />
-                              : <Image size={16} className="text-neutral-300" />
+                              ? <img src={img} alt={p.name} className="w-full h-full object-contain" />
+                              : <Image size={20} className="text-neutral-300" />
                             }
                           </div>
                           <div>
@@ -145,7 +168,8 @@ export default function Products() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-neutral-500">{categories[p.categoryId] || '—'}</td>
+                      <td className="px-6 py-4 text-neutral-500">{categoryNameById[p.categoryId] || '—'}</td>
+                      <td className="px-6 py-4 text-neutral-500">{brandNameById[p.brandId] || '—'}</td>
                       <td className="px-6 py-4 font-semibold text-primary-900">{minPrice(p)}</td>
                       <td className="px-6 py-4">
                         <span className={`font-semibold ${stock === 0 ? 'text-red-500' : stock <= 10 ? 'text-amber-600' : 'text-primary-900'}`}>
@@ -178,9 +202,10 @@ export default function Products() {
         title={editingProduct ? 'Edit Product' : 'Add New Product'}
         size="lg"
       >
-        <ProductForm 
-          product={editingProduct} 
-          categories={categories} 
+        <ProductForm
+          product={editingProduct}
+          categories={categories}
+          brands={brands}
           onSuccess={() => setIsModalOpen(false)}
           onCancel={() => setIsModalOpen(false)}
         />

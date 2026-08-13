@@ -1,32 +1,50 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Zap, ShieldOff } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Toaster } from 'react-hot-toast';
 import { auth } from './config/firebase';
 import Navbar from './components/Navbar';
-import Dashboard from './pages/Dashboard';
-import Products from './pages/Products';
-import Orders from './pages/Orders';
-import Categories from './pages/Categories';
-import Customers from './pages/Customers';
-import Offers from './pages/Offers';
+import Loader from './components/ui/Loader';
 import Login from './pages/Login';
+
+// Each admin page is its own chunk — only the page the admin is currently on
+// gets downloaded, instead of one ~800kB bundle for all 7 pages up front.
+const Dashboard  = lazy(() => import('./pages/Dashboard'));
+const Products   = lazy(() => import('./pages/Products'));
+const Orders     = lazy(() => import('./pages/Orders'));
+const Accounts   = lazy(() => import('./pages/Accounts'));
+const Categories = lazy(() => import('./pages/Categories'));
+const Brands     = lazy(() => import('./pages/Brands'));
+const Customers  = lazy(() => import('./pages/Customers'));
+const Offers     = lazy(() => import('./pages/Offers'));
+
+function PageFallback() {
+  return (
+    <div className="flex items-center justify-center h-full min-h-[60vh]">
+      <Loader text="Loading…" />
+    </div>
+  );
+}
 
 function AppShell() {
   return (
-    <div className="flex h-screen bg-neutral-50 overflow-hidden">
+    <div className="flex flex-col md:flex-row h-screen bg-neutral-50 overflow-hidden">
       <Navbar />
       <main className="flex-1 overflow-y-auto">
-        <Routes>
-          <Route path="/"           element={<Dashboard />} />
-          <Route path="/dashboard"  element={<Dashboard />} />
-          <Route path="/products"   element={<Products />}  />
-          <Route path="/orders"     element={<Orders />}    />
-          <Route path="/categories" element={<Categories />}/>
-          <Route path="/customers"  element={<Customers />} />
-          <Route path="/offers"     element={<Offers />}    />
-        </Routes>
+        <Suspense fallback={<PageFallback />}>
+          <Routes>
+            <Route path="/"           element={<Dashboard />} />
+            <Route path="/dashboard"  element={<Dashboard />} />
+            <Route path="/products"   element={<Products />}  />
+            <Route path="/orders"     element={<Orders />}    />
+            <Route path="/accounts"   element={<Accounts />}  />
+            <Route path="/categories" element={<Categories />}/>
+            <Route path="/brands"     element={<Brands />}    />
+            <Route path="/customers"  element={<Customers />} />
+            <Route path="/offers"     element={<Offers />}    />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   );
@@ -94,7 +112,7 @@ export default function App() {
           <div className="w-24 h-24 flex items-center justify-center animate-pulse">
             <img src="/logo.png" alt="Loading" className="w-full h-full object-contain" />
           </div>
-          <p className="text-sm text-neutral-400 font-medium">Loading SupaMart…</p>
+          <p className="text-sm text-neutral-400 font-medium">Loading MS Traders…</p>
         </div>
       </div>
     );

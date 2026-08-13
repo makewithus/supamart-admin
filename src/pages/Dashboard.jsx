@@ -83,14 +83,14 @@ export default function Dashboard() {
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   return (
-    <div className="p-8 min-h-screen bg-neutral-50">
+    <div className="p-4 sm:p-6 lg:p-8 min-h-screen bg-neutral-50">
       <PageHeader
         title="Dashboard"
         subtitle={today}
       />
 
       {/* ── Stat cards ── */}
-      <div className="grid grid-cols-2 xl:grid-cols-5 gap-5 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-5 mb-8">
         <StatCard icon={ClipboardList} color="secondary" label="Today's Orders"   value={fmt(stats.orders)}    sub={`${stats.pending} pending today`}   style={{ animationDelay: '0ms'   }} />
         <StatCard icon={Banknote}      color="tertiary"  label="Today's Revenue"  value={`₹${fmt(stats.revenue)}`} sub="For today"              style={{ animationDelay: '75ms'  }} />
         <StatCard icon={Package}       color="primary"   label="Low Stock"       value={lowStock.length}  sub="Items needing refill"                   style={{ animationDelay: '150ms' }} />
@@ -99,7 +99,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Status mini-row ── */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         {[
           { icon: Clock,         color: 'amber',     label: 'Pending',   value: stats.pending    },
           { icon: CheckCircle2,  color: 'secondary', label: 'Delivered', value: stats.delivered  },
@@ -116,9 +116,9 @@ export default function Dashboard() {
       </div>
 
       {/* ── Lower grid ── */}
-      <div className="grid grid-cols-3 gap-6">
-        {/* Recent orders (spans 2 cols) */}
-        <div className="col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Recent orders (spans 2 cols on large screens) */}
+        <div className="lg:col-span-2">
           <Card>
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-bold text-primary-900">Recent Orders</h2>

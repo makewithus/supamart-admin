@@ -12,12 +12,13 @@ import OrderDetailsModal from '../components/OrderDetailsModal';
 import { onSnapshot } from 'firebase/firestore';
 
 const STATUS_BADGE = {
-  PENDING:           { label: 'Pending',          v: 'warning' },
-  CONFIRMED:         { label: 'Confirmed',         v: 'info'    },
-  PACKING:           { label: 'Packing',           v: 'info'    },
-  OUT_FOR_DELIVERY:  { label: 'Out for Delivery',  v: 'info'    },
-  DELIVERED:         { label: 'Delivered',         v: 'success' },
-  CANCELLED:         { label: 'Cancelled',         v: 'error'   },
+  ORDER_PLACED:        { label: 'Placed',            v: 'warning' },
+  ORDER_ACCEPTED:      { label: 'Accepted',           v: 'info'    },
+  PACKING:             { label: 'Packing',            v: 'info'    },
+  READY_FOR_DELIVERY:  { label: 'Ready for Delivery', v: 'info'    },
+  OUT_FOR_DELIVERY:    { label: 'Out for Delivery',   v: 'info'    },
+  DELIVERED:           { label: 'Delivered',          v: 'success' },
+  CANCELLED:           { label: 'Cancelled',          v: 'error'   },
 };
 
 const ALL_STATUSES = Object.keys(STATUS_BADGE);
@@ -58,13 +59,15 @@ export default function Orders() {
 
   const filtered = orders.filter((o) => {
     if (filter !== 'ALL' && o.status !== filter) return false;
-    if (search && !o.id.toLowerCase().includes(search.toLowerCase()) &&
+    if (search &&
+        !String(o.orderNo || '').includes(search) &&
+        !o.id.toLowerCase().includes(search.toLowerCase()) &&
         !(o.userPhone || '').includes(search)) return false;
     return true;
   });
 
   return (
-    <div className="p-8 bg-neutral-50 min-h-screen">
+    <div className="p-4 sm:p-6 lg:p-8 bg-neutral-50 min-h-screen">
       <PageHeader title="Orders" subtitle={`${orders.length} total orders`} />
 
       <Card>
@@ -119,9 +122,12 @@ export default function Orders() {
                       onClick={() => handleOrderClick(o)}
                       className="border-b border-neutral-50 hover:bg-neutral-50/80 transition-colors cursor-pointer"
                     >
-                      <td className="px-6 py-4 font-mono text-xs text-neutral-500">#{o.id.slice(-8).toUpperCase()}</td>
-                      <td className="px-6 py-4 font-medium text-primary-900">{o.userPhone || o.userId?.slice(0, 10) || '—'}</td>
-                      <td className="px-6 py-4 text-neutral-500">{(o.cartItems || []).length} items</td>
+                      <td className="px-6 py-4 font-mono text-xs text-neutral-500">#{o.orderNo}</td>
+                      <td className="px-6 py-4">
+                        <p className="font-medium text-primary-900">{o.userName || o.userId?.slice(0, 10) || '—'}</p>
+                        {o.userPhone && <p className="text-xs text-neutral-400">{o.userPhone}</p>}
+                      </td>
+                      <td className="px-6 py-4 text-neutral-500">{(o.items || o.cartItems || []).length} items</td>
                       <td className="px-6 py-4 font-semibold text-primary-900">₹{Math.round(o.total || 0)}</td>
                       <td className="px-6 py-4"><Badge variant={s.v}>{s.label}</Badge></td>
                       <td className="px-6 py-4 text-neutral-400 text-xs">{timeAgo(o.createdAt)}</td>

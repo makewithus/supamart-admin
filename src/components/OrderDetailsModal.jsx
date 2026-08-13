@@ -6,14 +6,15 @@ import toast from 'react-hot-toast';
 import { apiPatch } from '../services/api';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import productImages from '../utils/productImages';
 
 const STATUS_OPTIONS = [
-  'PENDING', 'CONFIRMED', 'PACKING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'
+  'ORDER_PLACED', 'ORDER_ACCEPTED', 'PACKING', 'READY_FOR_DELIVERY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'
 ];
 
 export default function OrderDetailsModal({ order, onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState(order?.status || 'PENDING');
+  const [status, setStatus] = useState(order?.status || 'ORDER_PLACED');
   const [partnerId, setPartnerId] = useState(order?.assignedPartnerId || '');
   const [partners, setPartners] = useState([]);
 
@@ -72,8 +73,8 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
       {/* Basic Info */}
       <div className="grid grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-2xl border border-neutral-100">
         <div>
-          <p className="text-xs text-neutral-500 font-semibold uppercase tracking-wider mb-1">Order ID</p>
-          <p className="font-mono text-sm font-bold text-primary-900">{order.id}</p>
+          <p className="text-xs text-neutral-500 font-semibold uppercase tracking-wider mb-1">Order #</p>
+          <p className="font-mono text-sm font-bold text-primary-900">#{order.orderNo}</p>
         </div>
         <div>
           <p className="text-xs text-neutral-500 font-semibold uppercase tracking-wider mb-1">Amount</p>
@@ -81,7 +82,15 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
         </div>
         <div>
           <p className="text-xs text-neutral-500 font-semibold uppercase tracking-wider mb-1">Payment</p>
-          <Badge variant={order.paymentStatus === 'PAID' ? 'success' : 'warning'}>{order.paymentMethod} • {order.paymentStatus}</Badge>
+          <Badge variant={
+            order.paymentStatus === 'PAID' ? 'success'
+              : order.paymentStatus === 'FAILED' ? 'error'
+              : order.paymentStatus === 'AWAITING_CONFIRMATION' ? 'warning'
+              : 'neutral'
+          }>{order.paymentMethod} • {order.paymentStatus}</Badge>
+          {order.paymentRejectionReason && (
+            <p className="text-xs text-red-500 font-medium mt-1">{order.paymentRejectionReason}</p>
+          )}
         </div>
         <div>
           <p className="text-xs text-neutral-500 font-semibold uppercase tracking-wider mb-1">Date</p>
@@ -95,6 +104,8 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
           <User size={16} /> Customer Information
         </h3>
         <div className="bg-neutral-50 p-4 rounded-2xl border border-neutral-100 space-y-2">
+          <p className="text-sm text-neutral-700"><strong>Name:</strong> {order.userName || '—'}</p>
+          <p className="text-sm text-neutral-700"><strong>Email:</strong> {order.userEmail || '—'}</p>
           <p className="text-sm text-neutral-700"><strong>Phone:</strong> {order.userPhone || '—'}</p>
           {order.addressSnapshot && (
             <div className="flex gap-2 text-sm text-neutral-700 mt-2 pt-2 border-t border-neutral-200">
@@ -129,8 +140,18 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
               {(order.items || order.cartItems || []).map((item, idx) => (
                 <tr key={idx} className="border-b border-neutral-50 last:border-0">
                   <td className="p-3">
-                    <p className="font-medium text-primary-900">{item.name}</p>
-                    <p className="text-xs text-neutral-400">{item.variantLabel || item.unit}</p>
+                    <div className="flex items-center gap-3">
+                      <div className="w-16 h-16 rounded-lg bg-neutral-100 flex-shrink-0 overflow-hidden flex items-center justify-center">
+                        {productImages[item.name]
+                          ? <img src={productImages[item.name]} alt={item.name} className="w-full h-full object-contain" />
+                          : <Package size={20} className="text-neutral-300" />
+                        }
+                      </div>
+                      <div>
+                        <p className="font-medium text-primary-900">{item.name}</p>
+                        <p className="text-xs text-neutral-400">{item.variantLabel || item.unit}</p>
+                      </div>
+                    </div>
                   </td>
                   <td className="p-3 text-neutral-700">x{item.qty}</td>
                   <td className="p-3 text-neutral-700">₹{item.price}</td>
@@ -172,7 +193,7 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
               {partners.map(p => <option key={p.id} value={p.id}>{p.name || p.phone || p.id}</option>)}
             </select>
           </div>
-          <Button variant="outline" onClick={handleAssignPartner} disabled={loading || partnerId === order.assignedPartnerId}>
+          <Button variant="outlined" onClick={handleAssignPartner} disabled={loading || partnerId === order.assignedPartnerId}>
             {loading ? <Loader2 size={16} className="animate-spin" /> : 'Assign'}
           </Button>
         </div>

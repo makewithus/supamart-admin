@@ -21,7 +21,7 @@ export default function Select({ value, onChange, options = [], placeholder = 'S
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-neutral-50 border text-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-primary-900/10 disabled:opacity-50 disabled:cursor-not-allowed
+        className={`w-full flex items-center justify-between px-4 py-2.5 rounded-md bg-neutral-50 border text-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-primary-900/10 disabled:opacity-50 disabled:cursor-not-allowed
           ${open ? 'border-primary-900 ring-2 ring-primary-900/10' : 'border-neutral-200 hover:border-neutral-400'}
         `}
       >
@@ -36,7 +36,7 @@ export default function Select({ value, onChange, options = [], placeholder = 'S
 
       {open && (
         <div
-          className="absolute z-50 mt-1.5 w-full bg-white rounded-2xl shadow-dropdown border border-neutral-100 py-1.5 overflow-hidden"
+          className="absolute z-50 mt-1.5 w-full bg-white rounded-md shadow-dropdown border border-neutral-100 py-1.5 overflow-hidden"
           style={{ animation: 'fadeUp 0.15s ease both' }}
         >
           {options.map((opt) => {

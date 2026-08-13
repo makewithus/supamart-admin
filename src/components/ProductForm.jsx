@@ -6,6 +6,7 @@ import Select from './ui/Select';
 import toast from 'react-hot-toast';
 import { apiPost, apiPut } from '../services/api';
 import { uploadImages } from '../services/storage';
+import productImages from '../utils/productImages';
 
 const AVAILABILITY_OPTIONS = [
   { value: 'AVAILABLE',    label: 'Available' },
@@ -13,13 +14,32 @@ const AVAILABILITY_OPTIONS = [
   { value: 'UNAVAILABLE',  label: 'Unavailable' },
 ];
 
-export default function ProductForm({ product, categories, onSuccess, onCancel }) {
+// Top-level categories first, each immediately followed by its own sub-categories
+// (indented in the label) — mirrors how the customer app's Categories accordion nests them.
+function buildCategoryOptions(categories) {
+  const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0);
+  const topLevel = categories.filter((c) => !c.parentId).sort(byOrder);
+  const options = [];
+  topLevel.forEach((parent) => {
+    options.push({ value: parent.id, label: parent.name });
+    categories
+      .filter((c) => c.parentId === parent.id)
+      .sort(byOrder)
+      .forEach((child) => options.push({ value: child.id, label: `— ${child.name}` }));
+  });
+  return options;
+}
+
+export default function ProductForm({ product, categories, brands = [], onSuccess, onCancel }) {
   const isEdit = !!product;
+  const categoryOptions = buildCategoryOptions(categories);
+  const brandOptions = [{ value: '', label: 'None' }, ...brands.map((b) => ({ value: b.id, label: b.name }))];
 
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     categoryId: '',
+    brandId: '',
     price: '',
     offerPrice: '',
     stock: '',
@@ -46,6 +66,7 @@ export default function ProductForm({ product, categories, onSuccess, onCancel }
         name:         product.name || '',
         description:  product.description || '',
         categoryId:   product.categoryId || '',
+        brandId:      product.brandId || '',
         price:        v.price?.toString() || '',
         offerPrice:   v.offerPrice?.toString() || '',
         stock:        v.stock?.toString() || '',
@@ -58,8 +79,8 @@ export default function ProductForm({ product, categories, onSuccess, onCancel }
         isTrending:   product.isTrending || false,
       });
       setExistingImages(product.images || []);
-    } else if (Object.keys(categories).length > 0) {
-      setFormData(prev => ({ ...prev, categoryId: Object.keys(categories)[0] }));
+    } else if (categories.length > 0) {
+      setFormData(prev => ({ ...prev, categoryId: categories[0].id }));
     }
   }, [product, categories]);
 
@@ -68,6 +89,21 @@ export default function ProductForm({ product, categories, onSuccess, onCancel }
     if (!files.length) return;
     setNewImages(prev => [...prev, ...files]);
     setPreviewUrls(prev => [...prev, ...files.map(f => URL.createObjectURL(f))]);
+    e.target.value = '';
+  };
+
+  // Replaces the product's main photo in one click — clears whatever was there before
+  // (bundled default, an older upload, or a not-yet-saved pending one) and puts the new
+  // file in the single "primary" slot, so there's no ambiguity about which photo is the
+  // one that shows everywhere. Any extra photos add on top of this via the "Add" box below.
+  const handlePrimaryPhotoChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    previewUrls.forEach((url) => URL.revokeObjectURL(url));
+    setExistingImages([]);
+    setNewImages([file]);
+    setPreviewUrls([URL.createObjectURL(file)]);
+    e.target.value = '';
   };
 
   const removeExistingImage = (idx) => setExistingImages(prev => prev.filter((_, i) => i !== idx));
@@ -123,6 +159,7 @@ export default function ProductForm({ product, categories, onSuccess, onCancel }
         name:         formData.name,
         description:  formData.description,
         categoryId:   formData.categoryId,
+        brandId:      formData.brandId || null,
         unit:         formData.unit,
         weight:       Number(formData.weight) || 0,
         availability: formData.availability,
@@ -151,7 +188,21 @@ export default function ProductForm({ product, categories, onSuccess, onCancel }
     }
   };
 
-  const inputClass = "w-full px-4 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10";
+  // Mirrors the priority Products.jsx/customer app's getProductImageSource() use: a real
+  // uploaded photo (first existingImages entry, if not the generic shared Cloudinary seed
+  // stock photo) overrides the bundled default — so uploading here is how an admin
+  // actually replaces a product's picture (e.g. new packaging), not just decoration.
+  const bundledPhoto = productImages[formData.name];
+  const firstExistingUrl = existingImages[0] ? (existingImages[0].url || existingImages[0]) : null;
+  const existingIsGeneric = firstExistingUrl && /res\.cloudinary\.com\/demo\//.test(firstExistingUrl);
+  // A pending (not-yet-saved) upload sitting in slot 0 will become images[0] on submit —
+  // show it as the primary photo now, rather than the stale default, so what's on screen
+  // always matches what saving will actually produce.
+  const pendingPrimaryUrl = (!existingImages.length && previewUrls.length) ? previewUrls[0] : null;
+  const usingUploadedPhoto = !!pendingPrimaryUrl || (!!firstExistingUrl && !existingIsGeneric);
+  const displayedPhoto = pendingPrimaryUrl || (firstExistingUrl && !existingIsGeneric ? firstExistingUrl : bundledPhoto);
+
+  const inputClass = "w-full px-4 py-2.5 rounded-md bg-neutral-50 border border-neutral-200 text-sm focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -166,10 +217,19 @@ export default function ProductForm({ product, categories, onSuccess, onCancel }
           <Select
             value={formData.categoryId}
             onChange={(v) => setFormData({ ...formData, categoryId: v })}
-            options={Object.entries(categories).map(([id, name]) => ({ value: id, label: name }))}
+            options={categoryOptions}
             placeholder="Select category…"
           />
         </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-neutral-500 mb-1">Brand</label>
+        <Select
+          value={formData.brandId}
+          onChange={(v) => setFormData({ ...formData, brandId: v })}
+          options={brandOptions}
+        />
       </div>
 
       <div>
@@ -196,7 +256,7 @@ export default function ProductForm({ product, categories, onSuccess, onCancel }
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-xs font-semibold text-neutral-500 mb-1">Unit (e.g. 1 kg)</label>
           <input type="text" className={inputClass} value={formData.unit}
@@ -206,11 +266,6 @@ export default function ProductForm({ product, categories, onSuccess, onCancel }
           <label className="block text-xs font-semibold text-neutral-500 mb-1">Weight (kg)</label>
           <input type="number" min="0" step="0.01" className={inputClass} value={formData.weight}
             onChange={e => setFormData({ ...formData, weight: e.target.value })} />
-        </div>
-        <div>
-          <label className="block text-xs font-semibold text-neutral-500 mb-1">SKU</label>
-          <input type="text" className={inputClass} value={formData.sku}
-            onChange={e => setFormData({ ...formData, sku: e.target.value })} />
         </div>
       </div>
 
@@ -253,32 +308,70 @@ export default function ProductForm({ product, categories, onSuccess, onCancel }
       </div>
 
       <div>
-        <label className="block text-xs font-semibold text-neutral-500 mb-2">Product Images</label>
-        <div className="flex flex-wrap gap-4 mb-4">
-          {existingImages.map((img, idx) => (
-            <div key={`ext-${idx}`} className="relative w-20 h-20 rounded-xl overflow-hidden bg-neutral-100 border border-neutral-200">
-              <img src={img.url || img} className="w-full h-full object-cover" alt="Product" />
-              <button type="button" onClick={() => removeExistingImage(idx)}
-                className="absolute top-1 right-1 bg-white/80 p-1 rounded-full text-red-500 hover:bg-red-500 hover:text-white transition-colors">
-                <X size={12} />
-              </button>
+        <label className="block text-xs font-semibold text-neutral-500 mb-2">Product Photo</label>
+        <div className="flex flex-wrap items-start gap-4">
+          {/* Primary photo — the whole tile is clickable to replace it in one step */}
+          <label
+            className="relative w-28 h-28 rounded-xl overflow-hidden bg-neutral-100 border border-neutral-200 cursor-pointer group flex-shrink-0"
+            title="Click to upload a new photo — e.g. when the packaging changes"
+          >
+            <input type="file" accept="image/*" className="hidden" onChange={handlePrimaryPhotoChange} />
+            {displayedPhoto ? (
+              <img src={displayedPhoto} className="w-full h-full object-contain" alt={formData.name} />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center text-neutral-400 group-hover:text-primary-600 transition-colors">
+                <ImageIcon size={22} />
+                <span className="text-[10px] font-medium mt-1">No photo</span>
+              </div>
+            )}
+            <div className="absolute inset-0 bg-neutral-900/0 group-hover:bg-neutral-900/55 transition-colors flex items-center justify-center">
+              <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-[11px] font-semibold flex flex-col items-center gap-1">
+                <Upload size={16} />
+                {displayedPhoto ? 'Change' : 'Upload'}
+              </span>
             </div>
-          ))}
-          {previewUrls.map((url, idx) => (
-            <div key={`new-${idx}`} className="relative w-20 h-20 rounded-xl overflow-hidden bg-neutral-100 border border-neutral-200">
-              <img src={url} className="w-full h-full object-cover" alt="New Upload" />
-              <button type="button" onClick={() => removeNewImage(idx)}
-                className="absolute top-1 right-1 bg-white/80 p-1 rounded-full text-red-500 hover:bg-red-500 hover:text-white transition-colors">
-                <X size={12} />
-              </button>
-            </div>
-          ))}
-          <label className="w-20 h-20 rounded-xl border-2 border-dashed border-neutral-300 flex flex-col items-center justify-center cursor-pointer hover:border-primary-500 hover:bg-primary-50 transition-colors text-neutral-400 hover:text-primary-600">
-            <input type="file" multiple accept="image/*" className="hidden" onChange={handleImageChange} />
-            <Upload size={20} />
-            <span className="text-[10px] font-medium mt-1">Add</span>
           </label>
+
+          {/* Extra photos (optional) + add box */}
+          <div className="flex flex-wrap gap-4">
+            {existingImages.slice(1).map((img, i) => {
+              const idx = i + 1;
+              return (
+                <div key={`ext-${idx}`} className="relative w-24 h-24 rounded-xl overflow-hidden bg-neutral-100 border border-neutral-200">
+                  <img src={img.url || img} className="w-full h-full object-contain" alt="Product" />
+                  <button type="button" onClick={() => removeExistingImage(idx)}
+                    className="absolute top-1 right-1 bg-white/80 p-1 rounded-full text-red-500 hover:bg-red-500 hover:text-white transition-colors">
+                    <X size={12} />
+                  </button>
+                </div>
+              );
+            })}
+            {previewUrls.slice(existingImages.length ? 0 : 1).map((url, i) => {
+              const idx = (existingImages.length ? 0 : 1) + i;
+              return (
+                <div key={`new-${idx}`} className="relative w-24 h-24 rounded-xl overflow-hidden bg-neutral-100 border border-neutral-200">
+                  <img src={url} className="w-full h-full object-contain" alt="New Upload" />
+                  <button type="button" onClick={() => removeNewImage(idx)}
+                    className="absolute top-1 right-1 bg-white/80 p-1 rounded-full text-red-500 hover:bg-red-500 hover:text-white transition-colors">
+                    <X size={12} />
+                  </button>
+                </div>
+              );
+            })}
+            <label className="w-24 h-24 rounded-xl border-2 border-dashed border-neutral-300 flex flex-col items-center justify-center cursor-pointer hover:border-primary-500 hover:bg-primary-50 transition-colors text-neutral-400 hover:text-primary-600">
+              <input type="file" multiple accept="image/*" className="hidden" onChange={handleImageChange} />
+              <Upload size={18} />
+              <span className="text-[10px] font-medium mt-1">Add</span>
+            </label>
+          </div>
         </div>
+        <p className="text-[11px] text-neutral-400 mt-2">
+          {usingUploadedPhoto
+            ? "Click the photo to replace it — this is what's shown everywhere for this product, overriding the bundled default."
+            : bundledPhoto
+              ? "This is the bundled default photo. Click it to upload a real photo — e.g. when the packaging changes — and it'll override the default everywhere."
+              : "Click to upload a photo for this product."}
+        </p>
       </div>
 
       {loading && (

@@ -43,7 +43,7 @@ export default function Login() {
 
         {/* Brand mark */}
         <div className="flex items-center gap-3 relative z-10">
-          <img src="/logo.png" alt="SupaMart" className="h-12 w-auto object-contain" />
+          <img src="/logo.png" alt="MS Traders" className="h-12 w-auto object-contain" />
           <div>
             <p className="text-white font-bold text-xl leading-none">Admin</p>
             <p className="text-neutral-500 text-xs mt-0.5">Console</p>
@@ -79,7 +79,7 @@ export default function Login() {
         <div className="w-full max-w-md">
           {/* Mobile brand mark */}
           <div className="flex items-center gap-2.5 mb-10 lg:hidden">
-            <img src="/logo.png" alt="SupaMart" className="h-10 w-auto object-contain" />
+            <img src="/logo.png" alt="MS Traders" className="h-10 w-auto object-contain" />
             <p className="text-primary-900 font-bold text-lg">Admin</p>
           </div>
 
@@ -100,7 +100,7 @@ export default function Login() {
               type="email"
               label="Email address"
               icon={Mail}
-              placeholder="admin@supamart.in"
+              placeholder="admin@mstraders.in"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -146,7 +146,7 @@ export default function Login() {
           </form>
 
           <p className="text-center text-xs text-neutral-300 mt-8">
-            SupaMart Admin · Restricted access
+            MS Traders Admin · Restricted access
           </p>
         </div>
       </div>

@@ -1,18 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, Upload, X } from 'lucide-react';
 import Button from './ui/Button';
+import Select from './ui/Select';
 import toast from 'react-hot-toast';
 import { apiPost, apiPut } from '../services/api';
 import { uploadImage } from '../services/storage';
 
-export default function CategoryForm({ category, onSuccess, onCancel }) {
+export default function CategoryForm({ category, categories = [], onSuccess, onCancel }) {
   const isEdit = !!category;
+
+  // Only top-level categories can be a parent — keeps the taxonomy at the same two
+  // levels the customer app's Categories accordion renders (category > sub-category).
+  const parentOptions = [
+    { value: '', label: 'None — top-level category' },
+    ...categories
+      .filter((c) => !c.parentId && c.id !== category?.id)
+      .map((c) => ({ value: c.id, label: c.name })),
+  ];
 
   const [formData, setFormData] = useState({
     name:        '',
     description: '',
     order:       '',
     isActive:    true,
+    parentId:    '',
+    imageKey:    '',
   });
 
   const [existingImage, setExistingImage] = useState(null);
@@ -27,6 +39,8 @@ export default function CategoryForm({ category, onSuccess, onCancel }) {
         description: category.description || '',
         order:       category.order?.toString() || '',
         isActive:    category.isActive !== false,
+        parentId:    category.parentId || '',
+        imageKey:    category.imageKey || '',
       });
       setExistingImage(category.image || null);
     }
@@ -67,6 +81,8 @@ export default function CategoryForm({ category, onSuccess, onCancel }) {
         description: formData.description || '',
         order:       Number(formData.order) || 0,
         isActive:    formData.isActive,
+        parentId:    formData.parentId || null,
+        imageKey:    formData.imageKey.trim() || null,
         ...(imageUrl !== undefined && { image: imageUrl }),
       };
 
@@ -86,7 +102,7 @@ export default function CategoryForm({ category, onSuccess, onCancel }) {
     }
   };
 
-  const inputClass = "w-full px-4 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10";
+  const inputClass = "w-full px-4 py-2.5 rounded-md bg-neutral-50 border border-neutral-200 text-sm focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -100,6 +116,28 @@ export default function CategoryForm({ category, onSuccess, onCancel }) {
         <label className="block text-xs font-semibold text-neutral-500 mb-1">Description</label>
         <textarea className={inputClass} rows={2} value={formData.description}
           onChange={e => setFormData({ ...formData, description: e.target.value })} />
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-neutral-500 mb-1">Parent Category</label>
+        <Select
+          value={formData.parentId}
+          onChange={(v) => setFormData({ ...formData, parentId: v })}
+          options={parentOptions}
+        />
+        <p className="text-[11px] text-neutral-400 mt-1">
+          Leave as "None" for a top-level category (shown on Home/Categories). Pick a parent to make this a sub-category shown when that category is expanded.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-neutral-500 mb-1">Local Image Key (optional)</label>
+        <input type="text" className={inputClass} value={formData.imageKey}
+          placeholder="e.g. detergent-powder"
+          onChange={e => setFormData({ ...formData, imageKey: e.target.value })} />
+        <p className="text-[11px] text-neutral-400 mt-1">
+          Only needed if the customer app bundles a local image for this category (see customer/src/utils/subCategoryImages.js). Leave blank to use the uploaded image below instead.
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -129,7 +167,7 @@ export default function CategoryForm({ category, onSuccess, onCancel }) {
         <div className="flex items-center gap-4">
           {(existingImage || previewUrl) ? (
             <div className="relative w-24 h-24 rounded-xl overflow-hidden bg-neutral-100 border border-neutral-200">
-              <img src={previewUrl || existingImage} className="w-full h-full object-cover" alt="Category" />
+              <img src={previewUrl || existingImage} className="w-full h-full object-contain" alt="Category" />
               <button type="button" onClick={removeImage}
                 className="absolute top-1 right-1 bg-white/80 p-1 rounded-full text-red-500 hover:bg-red-500 hover:text-white transition-colors">
                 <X size={12} />
