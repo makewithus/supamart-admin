@@ -28,6 +28,8 @@ export default function Products() {
   const [brands, setBrands] = useState([]);
   const [search, setSearch]     = useState('');
   const [loading, setLoading]   = useState(true);
+  const [page, setPage]         = useState(1);
+  const PAGE_SIZE = 25;
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
@@ -98,6 +100,18 @@ export default function Products() {
     [products, search]
   );
 
+  // Client-side pagination — keeps the DOM (and the number of image requests)
+  // bounded even with a few hundred products in the catalog.
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageClamped = Math.min(page, totalPages);
+  const paged = useMemo(
+    () => filtered.slice((pageClamped - 1) * PAGE_SIZE, pageClamped * PAGE_SIZE),
+    [filtered, pageClamped]
+  );
+
+  // Any change to the result set (new search, deletions) resets to page 1.
+  useEffect(() => { setPage(1); }, [search]);
+
   const minPrice = (p) => {
     const prices = (p.variants || []).map((v) => v.offerPrice ?? v.price).filter(Boolean);
     return prices.length ? `₹${Math.min(...prices)}` : '—';
@@ -133,7 +147,8 @@ export default function Products() {
         {loading ? <Loader text="Loading products…" /> : filtered.length === 0 ? (
           <EmptyState icon={Package} title="No products found" message={search ? 'Try a different search term.' : 'Add your first product to get started.'} action="Add Product" onAction={() => setIsModalOpen(true)} />
         ) : (
-          <div className="overflow-x-auto -mx-6 -mb-6">
+          <>
+          <div className="overflow-x-auto -mx-6">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100">
@@ -143,7 +158,7 @@ export default function Products() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((p) => {
+                {paged.map((p) => {
                   const s = AVAIL_BADGE[p.availability] || { label: p.availability || '—', v: 'neutral' };
                   // Real admin-uploaded photo (not the generic shared Cloudinary seed
                   // stock photo) wins over the bundled one — lets an admin swap in a
@@ -158,7 +173,7 @@ export default function Products() {
                         <div className="flex items-center gap-3">
                           <div className="w-16 h-16 rounded-xl bg-neutral-100 flex-shrink-0 overflow-hidden flex items-center justify-center">
                             {img
-                              ? <img src={img} alt={p.name} className="w-full h-full object-contain" />
+                              ? <img src={img} alt={p.name} loading="lazy" decoding="async" className="w-full h-full object-contain" />
                               : <Image size={20} className="text-neutral-300" />
                             }
                           </div>
@@ -193,6 +208,34 @@ export default function Products() {
               </tbody>
             </table>
           </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-5 text-sm">
+              <span className="text-neutral-400">
+                Showing {(pageClamped - 1) * PAGE_SIZE + 1}–{Math.min(pageClamped * PAGE_SIZE, filtered.length)} of {filtered.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={pageClamped <= 1}
+                  className="px-3 py-1.5 rounded-md border border-neutral-200 text-primary-900 font-medium
+                    hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Previous
+                </button>
+                <span className="text-neutral-500 px-1">Page {pageClamped} of {totalPages}</span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={pageClamped >= totalPages}
+                  className="px-3 py-1.5 rounded-md border border-neutral-200 text-primary-900 font-medium
+                    hover:bg-neutral-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </Card>
 

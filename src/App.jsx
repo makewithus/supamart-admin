@@ -7,6 +7,7 @@ import { auth } from './config/firebase';
 import Navbar from './components/Navbar';
 import Loader from './components/ui/Loader';
 import Login from './pages/Login';
+import useIdleLogout from './hooks/useIdleLogout';
 
 // Each admin page is its own chunk — only the page the admin is currently on
 // gets downloaded, instead of one ~800kB bundle for all 7 pages up front.
@@ -78,6 +79,9 @@ export default function App() {
   const [user, setUser]     = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Auto sign-out after inactivity (only while a signed-in admin is using it).
+  useIdleLogout(!!user && isAdmin);
 
   useEffect(() => {
     let currentReq = 0;

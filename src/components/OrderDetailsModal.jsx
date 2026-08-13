@@ -143,7 +143,7 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
                     <div className="flex items-center gap-3">
                       <div className="w-16 h-16 rounded-lg bg-neutral-100 flex-shrink-0 overflow-hidden flex items-center justify-center">
                         {productImages[item.name]
-                          ? <img src={productImages[item.name]} alt={item.name} className="w-full h-full object-contain" />
+                          ? <img src={productImages[item.name]} alt={item.name} loading="lazy" decoding="async" className="w-full h-full object-contain" />
                           : <Package size={20} className="text-neutral-300" />
                         }
                       </div>

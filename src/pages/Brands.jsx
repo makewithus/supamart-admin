@@ -85,9 +85,9 @@ export default function Brands() {
                     overrides the bundled default -- same priority as product/category
                     images -- so editing a brand's logo here actually shows up. */}
                 {b.logoUrl
-                  ? <img src={b.logoUrl} alt={b.name} className="w-full h-full object-contain p-2" />
+                  ? <img src={b.logoUrl} alt={b.name} loading="lazy" decoding="async" className="w-full h-full object-contain p-2" />
                   : brandLogos[b.name]
-                  ? <img src={brandLogos[b.name]} alt={b.name} className="w-full h-full object-contain p-2" />
+                  ? <img src={brandLogos[b.name]} alt={b.name} loading="lazy" decoding="async" className="w-full h-full object-contain p-2" />
                   : <Tag size={24} className="text-neutral-300" />
                 }
               </div>

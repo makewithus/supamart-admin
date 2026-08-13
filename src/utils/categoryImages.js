@@ -14,11 +14,11 @@
 // icon from each absorbed group is reused for its merged/split parent below.
 
 const categoryImages = {
-  "household-cleaning": "/category-images/Detergent.png",
-  "personal-care": "/category-images/Bath%20and%20Hygiene.png",
-  "beverages": "/category-images/Beverages.png",
-  "health-drinks": "/category-images/Health%20Food%20Drinks.png",
-  "sauces-pickles-condiments": "/category-images/Packaged%20Foods.png",
+  "household-cleaning": "/category-images/Detergent.webp",
+  "personal-care": "/category-images/Bath%20and%20Hygiene.webp",
+  "beverages": "/category-images/Beverages.webp",
+  "health-drinks": "/category-images/Health%20Food%20Drinks.webp",
+  "sauces-pickles-condiments": "/category-images/Packaged%20Foods.webp",
 };
 
 export default categoryImages;
