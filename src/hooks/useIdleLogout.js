@@ -8,7 +8,7 @@ import { auth } from '../config/firebase';
 // been left idle. The last-activity timestamp lives in localStorage so the
 // timer survives a page refresh and is shared across tabs.
 
-const IDLE_LIMIT_MS   = 30 * 60 * 1000; // sign out after 30 min idle
+const IDLE_LIMIT_MS   = 10 * 60 * 1000; // sign out after 10 min idle
 const CHECK_EVERY_MS  = 20 * 1000;      // how often we re-check the timestamp
 const WRITE_THROTTLE_MS = 5 * 1000;     // don't touch localStorage on every mousemove
 const STORAGE_KEY = 'ms_admin_last_activity';
