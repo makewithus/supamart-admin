@@ -9,8 +9,6 @@ import { uploadImage } from '../services/storage';
 export default function CategoryForm({ category, categories = [], onSuccess, onCancel }) {
   const isEdit = !!category;
 
-  // Only top-level categories can be a parent — keeps the taxonomy at the same two
-  // levels the customer app's Categories accordion renders (category > sub-category).
   const parentOptions = [
     { value: '', label: 'None — top-level category' },
     ...categories
