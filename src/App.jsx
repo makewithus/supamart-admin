@@ -149,6 +149,19 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, async (u) => {
       const reqId = ++currentReq;
       if (u) {
+        // Force a fresh login after a redeploy. The build id is stamped at login
+        // time (Login.jsx, right before sign-in), so any restored session whose
+        // stored id doesn't match this running build — including every session
+        // that predates this feature (no id stored at all) — is treated as stale
+        // and bounced to the login screen. This is the deterministic mechanism a
+        // persisted Firebase session actually needs: without it, "the login screen
+        // is never shown" is not a bug, it's the expected behavior of
+        // browserLocalPersistence with nothing telling it to expire.
+        if (localStorage.getItem('ms_admin_build_id') !== __BUILD_ID__) {
+          await signOut(auth);
+          return;
+        }
+
         sawUser = true;
         setLoading(true); // Prevent UI from rendering before claims are checked
 
