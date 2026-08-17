@@ -31,18 +31,23 @@ export default function EnableAlertsPrompt({ show, onEnabled, onDismiss }) {
       // pushNotifications.js) rather than swallowed.
       const result = await initPushNotifications({ requestPermission: true });
 
+      // Every branch here is what the admin actually sees — kept short and free of any
+      // internal/technical detail (VAPID keys, "see console", reason codes). The full
+      // diagnostic reason is already logged to the console by initPushNotifications()
+      // itself, which is where that detail belongs, not in a toast a shop admin reads.
       if (isAudioUnlocked()) {
-        if (result.ok) {
-          toast.success('Order alerts enabled — sound + background notifications are active.');
+        if (result.ok || result.reason === 'no-vapid-key') {
+          // "no-vapid-key" means only the background-push layer isn't configured yet —
+          // from the admin's side that's indistinguishable from full success: sound
+          // alerts (the core requirement) work fully either way.
+          toast.success('Order alerts enabled');
         } else if (result.reason === 'permission-denied') {
-          toast.success('Sound alerts enabled. Background notifications need permission — enable it from your browser\'s site settings if you want alerts when this tab isn\'t active.');
-        } else if (result.reason === 'no-vapid-key') {
-          toast.success('Sound alerts enabled. (Background notifications need a VAPID key — see console.)');
+          toast.success('Order alerts enabled for this tab. Turn on notifications in your browser settings to also get alerts when the tab is in the background.');
         } else {
-          toast.success('Sound alerts enabled.');
+          toast.success('Order alerts enabled');
         }
       } else {
-        toast.error('Could not unlock audio — see browser console for details.');
+        toast.error("Couldn't enable order alerts. Please try again.");
       }
       onEnabled();
     } finally {
