@@ -105,23 +105,27 @@ export default function Navbar() {
           })}
         </nav>
 
-        {/* Alert sound test + Logout */}
+        {/* Alert sound test (dev only) + Logout */}
         <div className="px-3 pb-6 pt-2 border-t border-white/10 space-y-0.5">
-          <button
-            onClick={() => {
-              // Also a real gesture — clicking this always attempts to (re-)unlock audio,
-              // so it doubles as a manual "unstick" if the earlier Enable Order Alerts
-              // click somehow didn't take (e.g. permission dialog dismissed mid-flow).
-              getAudioContext()?.resume();
-              playNotificationSound();
-              toast.success('Playing test alert sound…', { duration: 2000 });
-            }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-neutral-400
-              hover:bg-white/8 hover:text-white transition-all duration-150"
-          >
-            <Volume2 size={18} strokeWidth={1.75} />
-            Test Alert Sound
-          </button>
+          {/* import.meta.env.DEV is Vite's built-in flag — true for `npm run dev`, always
+              false in a production build (`npm run build`), so this never ships to the
+              live admin console. It was a debugging aid; end users unlock/confirm sound
+              via the "Enable Order Alerts" banner (EnableAlertsPrompt.jsx), which already
+              plays the chime as part of that flow. */}
+          {import.meta.env.DEV && (
+            <button
+              onClick={() => {
+                getAudioContext()?.resume();
+                playNotificationSound();
+                toast.success('Playing test alert sound…', { duration: 2000 });
+              }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-neutral-400
+                hover:bg-white/8 hover:text-white transition-all duration-150"
+            >
+              <Volume2 size={18} strokeWidth={1.75} />
+              Test Alert Sound
+            </button>
+          )}
           <button
             onClick={() => auth.signOut()}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-neutral-400

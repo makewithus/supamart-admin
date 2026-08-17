@@ -32,7 +32,20 @@ export default function useIdleLogout(enabled) {
       localStorage.setItem(STORAGE_KEY, String(t));
     };
 
-    // Treat mount (a fresh sign-in or reload while signed in) as activity.
+    // SECURITY: check the PREVIOUS session's last-activity timestamp before treating this
+    // mount as fresh activity. The old code unconditionally stamped "now" on every mount —
+    // which meant simply reopening the browser (even after it sat closed for days) reset
+    // the idle clock to zero, so a persisted admin session effectively never expired as
+    // long as someone opened the browser at least once within any IDLE_LIMIT_MS window.
+    // That's what let a stale logged-in session sit there indefinitely without ever
+    // re-prompting for credentials. Now: if the browser was already idle-stale when this
+    // mounts, sign out immediately instead of quietly resetting the timer.
+    const existing = Number(localStorage.getItem(STORAGE_KEY)) || 0;
+    if (existing && Date.now() - existing >= IDLE_LIMIT_MS) {
+      localStorage.removeItem(STORAGE_KEY);
+      signOut(auth);
+      return undefined;
+    }
     stamp(Date.now());
 
     const onActivity = () => {
