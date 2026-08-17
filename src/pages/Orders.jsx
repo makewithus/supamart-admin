@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ShoppingCart, Search } from 'lucide-react';
 import { db } from '../config/firebase';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
@@ -23,6 +24,21 @@ const STATUS_BADGE = {
 
 const ALL_STATUSES = Object.keys(STATUS_BADGE);
 
+const PAYMENT_BADGE = {
+  PENDING:               { label: 'Payment Pending', v: 'neutral' },
+  AWAITING_CONFIRMATION: { label: 'Awaiting Confirmation', v: 'warning' },
+  PAID:                  { label: 'Paid', v: 'success' },
+  FAILED:                { label: 'Failed', v: 'error' },
+};
+const ALL_PAYMENT_STATUSES = Object.keys(PAYMENT_BADGE);
+
+const DATE_RANGES = {
+  ALL: { label: 'All time', ms: null },
+  TODAY: { label: 'Today', ms: 24 * 60 * 60 * 1000 },
+  WEEK: { label: 'Last 7 days', ms: 7 * 24 * 60 * 60 * 1000 },
+  MONTH: { label: 'Last 30 days', ms: 30 * 24 * 60 * 60 * 1000 },
+};
+
 function timeAgo(ms) {
   if (!ms) return '—';
   const d = Date.now() - ms;
@@ -33,9 +49,13 @@ function timeAgo(ms) {
 }
 
 export default function Orders() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [orders,  setOrders]  = useState([]);
   const [search,  setSearch]  = useState('');
   const [filter,  setFilter]  = useState('ALL');
+  const [paymentFilter, setPaymentFilter] = useState('ALL');
+  const [dateRange, setDateRange] = useState('ALL');
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -52,6 +72,20 @@ export default function Orders() {
     return () => unsub();
   }, []);
 
+  // "View Order" from the NewOrderBanner (App.jsx) navigates here with the order id in
+  // router state; once that order is present in the live list, open it automatically and
+  // clear the state so a manual refresh/back-navigation doesn't reopen it.
+  useEffect(() => {
+    const openOrderId = location.state?.openOrderId;
+    if (!openOrderId) return;
+    const match = orders.find((o) => o.id === openOrderId);
+    if (match) {
+      setSelectedOrder(match);
+      setIsModalOpen(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [orders, location.state, location.pathname, navigate]);
+
   const handleOrderClick = (order) => {
     setSelectedOrder(order);
     setIsModalOpen(true);
@@ -59,12 +93,21 @@ export default function Orders() {
 
   const filtered = orders.filter((o) => {
     if (filter !== 'ALL' && o.status !== filter) return false;
+    if (paymentFilter !== 'ALL' && o.paymentStatus !== paymentFilter) return false;
+    const rangeMs = DATE_RANGES[dateRange].ms;
+    if (rangeMs && Date.now() - (o.createdAt || 0) > rangeMs) return false;
     if (search &&
         !String(o.orderNo || '').includes(search) &&
         !o.id.toLowerCase().includes(search.toLowerCase()) &&
+        !(o.userName || '').toLowerCase().includes(search.toLowerCase()) &&
         !(o.userPhone || '').includes(search)) return false;
     return true;
   });
+
+  const clearFilters = () => {
+    setSearch(''); setFilter('ALL'); setPaymentFilter('ALL'); setDateRange('ALL');
+  };
+  const hasActiveFilters = filter !== 'ALL' || paymentFilter !== 'ALL' || dateRange !== 'ALL' || search !== '';
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-neutral-50 min-h-screen">
@@ -72,33 +115,54 @@ export default function Orders() {
 
       <Card>
         {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 mb-6">
+        <div className="flex flex-wrap items-center gap-3 mb-4">
           <div className="relative">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
             <input
               type="text"
-              placeholder="Search order ID or phone…"
+              placeholder="Search order #, name or phone…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 pr-4 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900
                 placeholder:text-neutral-400 focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10 transition-all w-64"
             />
           </div>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {['ALL', ...ALL_STATUSES].map((s) => (
-              <button
-                key={s}
-                onClick={() => setFilter(s)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  filter === s
-                    ? 'bg-primary-900 text-white'
-                    : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
-                }`}
-              >
-                {s === 'ALL' ? 'All' : STATUS_BADGE[s]?.label}
-              </button>
-            ))}
-          </div>
+          <select
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value)}
+            className="px-3 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900 focus:outline-none focus:border-primary-900"
+          >
+            {Object.entries(DATE_RANGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <select
+            value={paymentFilter}
+            onChange={(e) => setPaymentFilter(e.target.value)}
+            className="px-3 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900 focus:outline-none focus:border-primary-900"
+          >
+            <option value="ALL">Any payment status</option>
+            {ALL_PAYMENT_STATUSES.map((s) => <option key={s} value={s}>{PAYMENT_BADGE[s].label}</option>)}
+          </select>
+          {hasActiveFilters && (
+            <button onClick={clearFilters} className="text-xs font-semibold text-neutral-400 hover:text-primary-900 underline">
+              Clear filters
+            </button>
+          )}
+          <Badge variant="neutral">{filtered.length} of {orders.length}</Badge>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap mb-6">
+          {['ALL', ...ALL_STATUSES].map((s) => (
+            <button
+              key={s}
+              onClick={() => setFilter(s)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                filter === s
+                  ? 'bg-primary-900 text-white'
+                  : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
+              }`}
+            >
+              {s === 'ALL' ? 'All' : STATUS_BADGE[s]?.label}
+            </button>
+          ))}
         </div>
 
         {loading ? <Loader text="Loading orders…" /> : filtered.length === 0 ? (

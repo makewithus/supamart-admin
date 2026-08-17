@@ -27,6 +27,10 @@ export default function Products() {
   const [categories, setCategories] = useState([]); // full docs, so ProductForm can render hierarchy
   const [brands, setBrands] = useState([]);
   const [search, setSearch]     = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [brandFilter, setBrandFilter] = useState('ALL');
+  const [availFilter, setAvailFilter] = useState('ALL');
+  const [lowStockOnly, setLowStockOnly] = useState(false);
   const [loading, setLoading]   = useState(true);
   const [page, setPage]         = useState(1);
   const PAGE_SIZE = 25;
@@ -95,10 +99,24 @@ export default function Products() {
     setIsModalOpen(true);
   };
 
+  const stockOf = (p) => (p.variants || []).reduce((s, v) => s + (v.stock || 0), 0);
+
   const filtered = useMemo(
-    () => products.filter((p) => !search || p.name?.toLowerCase().includes(search.toLowerCase())),
-    [products, search]
+    () => products.filter((p) => {
+      if (search && !p.name?.toLowerCase().includes(search.toLowerCase())) return false;
+      if (categoryFilter !== 'ALL' && p.categoryId !== categoryFilter) return false;
+      if (brandFilter !== 'ALL' && p.brandId !== brandFilter) return false;
+      if (availFilter !== 'ALL' && p.availability !== availFilter) return false;
+      if (lowStockOnly && stockOf(p) > 10) return false;
+      return true;
+    }),
+    [products, search, categoryFilter, brandFilter, availFilter, lowStockOnly]
   );
+
+  const hasActiveFilters = search !== '' || categoryFilter !== 'ALL' || brandFilter !== 'ALL' || availFilter !== 'ALL' || lowStockOnly;
+  const clearFilters = () => {
+    setSearch(''); setCategoryFilter('ALL'); setBrandFilter('ALL'); setAvailFilter('ALL'); setLowStockOnly(false);
+  };
 
   // Client-side pagination — keeps the DOM (and the number of image requests)
   // bounded even with a few hundred products in the catalog.
@@ -109,15 +127,15 @@ export default function Products() {
     [filtered, pageClamped]
   );
 
-  // Any change to the result set (new search, deletions) resets to page 1.
-  useEffect(() => { setPage(1); }, [search]);
+  // Any change to the result set resets to page 1.
+  useEffect(() => { setPage(1); }, [search, categoryFilter, brandFilter, availFilter, lowStockOnly]);
 
   const minPrice = (p) => {
     const prices = (p.variants || []).map((v) => v.offerPrice ?? v.price).filter(Boolean);
     return prices.length ? `₹${Math.min(...prices)}` : '—';
   };
 
-  const totalStock = (p) => (p.variants || []).reduce((s, v) => s + (v.stock || 0), 0);
+  const totalStock = stockOf;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-neutral-50 min-h-screen">
@@ -128,7 +146,7 @@ export default function Products() {
       </PageHeader>
 
       <Card>
-        {/* Search */}
+        {/* Search + filters */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400" />
@@ -141,7 +159,44 @@ export default function Products() {
                 placeholder:text-neutral-400 focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10 transition-all"
             />
           </div>
-          <Badge variant="neutral">{filtered.length} results</Badge>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="px-3 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900 focus:outline-none focus:border-primary-900 max-w-[180px]"
+          >
+            <option value="ALL">All categories</option>
+            {categories.filter((c) => !c.parentId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select
+            value={brandFilter}
+            onChange={(e) => setBrandFilter(e.target.value)}
+            className="px-3 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900 focus:outline-none focus:border-primary-900 max-w-[160px]"
+          >
+            <option value="ALL">All brands</option>
+            {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+          <select
+            value={availFilter}
+            onChange={(e) => setAvailFilter(e.target.value)}
+            className="px-3 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900 focus:outline-none focus:border-primary-900"
+          >
+            <option value="ALL">Any availability</option>
+            {Object.entries(AVAIL_BADGE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <button
+            onClick={() => setLowStockOnly((v) => !v)}
+            className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
+              lowStockOnly ? 'bg-amber-500 text-white border-amber-500' : 'bg-neutral-50 text-neutral-500 border-neutral-200 hover:bg-neutral-100'
+            }`}
+          >
+            Low stock (≤10)
+          </button>
+          {hasActiveFilters && (
+            <button onClick={clearFilters} className="text-xs font-semibold text-neutral-400 hover:text-primary-900 underline">
+              Clear filters
+            </button>
+          )}
+          <Badge variant="neutral">{filtered.length} of {products.length}</Badge>
         </div>
 
         {loading ? <Loader text="Loading products…" /> : filtered.length === 0 ? (

@@ -8,9 +8,47 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import productImages from '../utils/productImages';
 
-const STATUS_OPTIONS = [
-  'ORDER_PLACED', 'ORDER_ACCEPTED', 'PACKING', 'READY_FOR_DELIVERY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'
-];
+// Mirrors backend/src/config/constants.js ORDER_STATUS_FLOW exactly — the backend only
+// accepts a forward one-step move (or a jump straight to CANCELLED at any point), never an
+// arbitrary jump. The dropdown used to list all 7 statuses regardless of the order's current
+// state, so picking anything but the single valid next status threw "Invalid transition X ->
+// Y" — that's what looked like "only a few of them work." Computing the actual valid next
+// step here means every option in the dropdown is guaranteed to succeed.
+const ORDER_STATUS_FLOW = ['ORDER_PLACED', 'ORDER_ACCEPTED', 'PACKING', 'READY_FOR_DELIVERY', 'OUT_FOR_DELIVERY', 'DELIVERED'];
+const TERMINAL_STATUSES = ['DELIVERED', 'CANCELLED'];
+const STATUS_LABELS = {
+  ORDER_PLACED: 'Order Placed',
+  ORDER_ACCEPTED: 'Accepted',
+  PACKING: 'Packing',
+  READY_FOR_DELIVERY: 'Ready for Delivery',
+  OUT_FOR_DELIVERY: 'Out for Delivery',
+  DELIVERED: 'Delivered',
+  CANCELLED: 'Cancelled',
+};
+
+// Returns { options, note } — options is always a subset the backend will actually accept
+// for a PATCH /orders/:id/status from this order's current state.
+function getStatusOptions(order) {
+  if (!order) return { options: [], note: null };
+  if (TERMINAL_STATUSES.includes(order.status)) {
+    return { options: [order.status], note: 'This order is finalized — its status can no longer be changed.' };
+  }
+  const idx = ORDER_STATUS_FLOW.indexOf(order.status);
+  const nextInFlow = idx >= 0 && idx + 1 < ORDER_STATUS_FLOW.length ? ORDER_STATUS_FLOW[idx + 1] : null;
+  // Backend hard-blocks advancing a UPI_MANUAL order past its current status until the
+  // customer has at least claimed payment (AWAITING_CONFIRMATION) or the shop marked it PAID.
+  const paymentBlocksAdvance =
+    order.paymentMethod === 'UPI_MANUAL' && order.paymentStatus === 'PENDING';
+
+  const options = [order.status];
+  if (nextInFlow && !paymentBlocksAdvance) options.push(nextInFlow);
+  options.push('CANCELLED');
+
+  const note = paymentBlocksAdvance
+    ? "UPI payment hasn't been confirmed yet — this order can only be cancelled until then."
+    : null;
+  return { options, note };
+}
 
 export default function OrderDetailsModal({ order, onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
@@ -67,6 +105,8 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
   };
 
   if (!order) return null;
+
+  const { options: statusOptions, note: statusNote } = getStatusOptions(order);
 
   return (
     <div className="space-y-6">
@@ -168,13 +208,17 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
         <div className="flex items-end gap-3">
           <div className="flex-1">
             <label className="block text-xs font-semibold text-neutral-500 mb-1">Update Status</label>
-            <select 
-              className="w-full px-4 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm focus:outline-none focus:border-primary-900"
+            <select
+              className="w-full px-4 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm focus:outline-none focus:border-primary-900 disabled:opacity-60"
               value={status}
               onChange={(e) => setStatus(e.target.value)}
+              disabled={statusOptions.length <= 1}
             >
-              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+              {statusOptions.map(s => (
+                <option key={s} value={s}>{STATUS_LABELS[s] || s}{s === order.status ? ' (current)' : ''}</option>
+              ))}
             </select>
+            {statusNote && <p className="text-xs text-amber-600 font-medium mt-1.5">{statusNote}</p>}
           </div>
           <Button variant="primary" onClick={handleUpdateStatus} disabled={loading || status === order.status}>
             {loading ? <Loader2 size={16} className="animate-spin" /> : 'Update Status'}

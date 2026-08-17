@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Tag, Plus, Edit2, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Tag, Plus, Edit2, Trash2, Search } from 'lucide-react';
 import { db } from '../config/firebase';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import Card from '../components/ui/Card';
@@ -23,6 +23,8 @@ function fmtDate(ms) {
 export default function Offers() {
   const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -65,6 +67,16 @@ export default function Offers() {
   };
 
   const isExpired = (o) => o.validTo && o.validTo < Date.now();
+  const statusOf = (o) => (isExpired(o) ? 'EXPIRED' : o.isActive === false ? 'INACTIVE' : 'ACTIVE');
+
+  const filtered = useMemo(
+    () => offers.filter((o) => {
+      if (statusFilter !== 'ALL' && statusOf(o) !== statusFilter) return false;
+      if (search && !o.code?.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    }),
+    [offers, search, statusFilter]
+  );
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-neutral-50 min-h-screen">
@@ -74,13 +86,43 @@ export default function Offers() {
         </Button>
       </PageHeader>
 
+      <Card className="mb-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+            <input
+              type="text"
+              placeholder="Search coupon code…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 pr-4 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900
+                placeholder:text-neutral-400 focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10 transition-all w-56"
+            />
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {['ALL', 'ACTIVE', 'INACTIVE', 'EXPIRED'].map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  statusFilter === s ? 'bg-primary-900 text-white' : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
+                }`}
+              >
+                {s === 'ALL' ? 'All' : s.charAt(0) + s.slice(1).toLowerCase()}
+              </button>
+            ))}
+          </div>
+          <Badge variant="neutral">{filtered.length} of {offers.length}</Badge>
+        </div>
+      </Card>
+
       {loading ? (
         <Card><Loader text="Loading offers…" /></Card>
-      ) : offers.length === 0 ? (
-        <Card><EmptyState icon={Tag} title="No offers yet" message="Create discount codes and offers for your customers." action="Add Offer" onAction={handleAddClick} /></Card>
+      ) : filtered.length === 0 ? (
+        <Card><EmptyState icon={Tag} title="No offers found" message={offers.length ? 'Try adjusting your filters.' : 'Create discount codes and offers for your customers.'} action="Add Offer" onAction={handleAddClick} /></Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {offers.map((o, i) => {
+          {filtered.map((o, i) => {
             const expired = isExpired(o);
             return (
               <div

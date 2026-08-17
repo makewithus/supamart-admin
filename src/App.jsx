@@ -1,5 +1,5 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
+import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import { Zap, ShieldOff } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Toaster } from 'react-hot-toast';
@@ -7,7 +7,14 @@ import { auth } from './config/firebase';
 import Navbar from './components/Navbar';
 import Loader from './components/ui/Loader';
 import Login from './pages/Login';
+import NewOrderBanner from './components/NewOrderBanner';
+import EnableAlertsPrompt from './components/EnableAlertsPrompt';
 import useIdleLogout from './hooks/useIdleLogout';
+import useNewOrderAlert from './hooks/useNewOrderAlert';
+import { isAudioUnlocked } from './utils/notificationSound';
+import { initPushNotifications, teardownPushNotifications } from './services/pushNotifications';
+
+const ALERTS_DISMISSED_KEY = 'ms_admin_alerts_prompt_dismissed';
 
 // Each admin page is its own chunk — only the page the admin is currently on
 // gets downloaded, instead of one ~800kB bundle for all 7 pages up front.
@@ -29,10 +36,41 @@ function PageFallback() {
 }
 
 function AppShell() {
+  const navigate = useNavigate();
+  const [orderAlert, setOrderAlert] = useState(null);
+  // Re-evaluated on every mount (i.e. every fresh load/reload) rather than cached in state
+  // from a previous session: a freshly-created AudioContext genuinely starts 'suspended'
+  // again on each page load in the strictest browsers, so the prompt is meant to reappear
+  // until the admin has interacted this session — see EnableAlertsPrompt.jsx.
+  const [showEnablePrompt, setShowEnablePrompt] = useState(
+    () => !isAudioUnlocked() && sessionStorage.getItem(ALERTS_DISMISSED_KEY) !== '1'
+  );
+
+  useNewOrderAlert(true, useCallback((order) => setOrderAlert(order), []));
+
+  const handleViewOrder = () => {
+    if (orderAlert) navigate('/orders', { state: { openOrderId: orderAlert.id } });
+    setOrderAlert(null);
+  };
+
+  const dismissEnablePrompt = () => {
+    sessionStorage.setItem(ALERTS_DISMISSED_KEY, '1');
+    setShowEnablePrompt(false);
+  };
+
   return (
     <div className="flex flex-col md:flex-row h-screen bg-neutral-50 overflow-hidden">
       <Navbar />
       <main className="flex-1 overflow-y-auto">
+        {orderAlert ? (
+          <NewOrderBanner order={orderAlert} onView={handleViewOrder} onDismiss={() => setOrderAlert(null)} />
+        ) : (
+          <EnableAlertsPrompt
+            show={showEnablePrompt}
+            onEnabled={() => setShowEnablePrompt(false)}
+            onDismiss={dismissEnablePrompt}
+          />
+        )}
         <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route path="/"           element={<Dashboard />} />
@@ -82,6 +120,8 @@ export default function App() {
 
   // Auto sign-out after inactivity (only while a signed-in admin is using it).
   useIdleLogout(!!user && isAdmin);
+  // Foreground "new order" sound/toast — reliable as long as this tab is open, no setup required.
+  useNewOrderAlert(!!user && isAdmin);
 
   useEffect(() => {
     let currentReq = 0;
@@ -102,8 +142,20 @@ export default function App() {
         try {
           const result = await u.getIdTokenResult();
           if (reqId !== currentReq) return;
-          setIsAdmin(result.claims.role === 'ADMIN');
+          const admin = result.claims.role === 'ADMIN';
+          setIsAdmin(admin);
           setUser(u);
+          // Silently RESTORE push registration if a past session already has Notification
+          // permission granted (requestPermission: false — this never shows the OS prompt).
+          // A first-time grant only ever happens via the explicit "Enable Order Alerts"
+          // gesture in EnableAlertsPrompt.jsx, per the no-auto-prompt requirement.
+          if (admin) {
+            initPushNotifications({ requestPermission: false }).then((pushResult) => {
+              if (!pushResult.ok && pushResult.reason !== 'permission-not-yet-requested' && pushResult.reason !== 'no-vapid-key') {
+                console.error('Push notification silent restore failed:', pushResult.reason, pushResult.error || '');
+              }
+            });
+          }
         } catch (error) {
           if (reqId !== currentReq) return;
           setIsAdmin(false);
@@ -113,6 +165,7 @@ export default function App() {
         if (reqId !== currentReq) return;
         setUser(null);
         setIsAdmin(false);
+        teardownPushNotifications();
       }
       setLoading(false);
     });

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Package, ShoppingCart, Layers, Users, LogOut, Tag, BadgePercent, Wallet, Menu, X,
+  LayoutDashboard, Package, ShoppingCart, Layers, Users, LogOut, Tag, BadgePercent, Wallet, Menu, X, Volume2,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { auth } from '../config/firebase';
+import { playNotificationSound, getAudioContext } from '../utils/notificationSound';
 
 const NAV = [
   { to: '/',           icon: LayoutDashboard, label: 'Dashboard' },
@@ -103,8 +105,23 @@ export default function Navbar() {
           })}
         </nav>
 
-        {/* Logout */}
-        <div className="px-3 pb-6 pt-2 border-t border-white/10">
+        {/* Alert sound test + Logout */}
+        <div className="px-3 pb-6 pt-2 border-t border-white/10 space-y-0.5">
+          <button
+            onClick={() => {
+              // Also a real gesture — clicking this always attempts to (re-)unlock audio,
+              // so it doubles as a manual "unstick" if the earlier Enable Order Alerts
+              // click somehow didn't take (e.g. permission dialog dismissed mid-flow).
+              getAudioContext()?.resume();
+              playNotificationSound();
+              toast.success('Playing test alert sound…', { duration: 2000 });
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-neutral-400
+              hover:bg-white/8 hover:text-white transition-all duration-150"
+          >
+            <Volume2 size={18} strokeWidth={1.75} />
+            Test Alert Sound
+          </button>
           <button
             onClick={() => auth.signOut()}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-neutral-400
