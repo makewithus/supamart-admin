@@ -144,39 +144,78 @@ export default function App() {
 
   useEffect(() => {
     let currentReq = 0;
+    let sawUser = false; // for diagnostics only — tells the "u is null" log apart as a real
+                          // sign-out vs. this being the very first check on page load
     const unsub = onAuthStateChanged(auth, async (u) => {
       const reqId = ++currentReq;
       if (u) {
+        sawUser = true;
         setLoading(true); // Prevent UI from rendering before claims are checked
+
+        // getIdTokenResult() right after a fresh sign-in should already have a valid
+        // cached token and not need a network round-trip — but a transient network blip
+        // (exactly the kind of thing that's more common on a shop's real-world
+        // connection) can still make it throw. Retrying once, rather than immediately
+        // concluding "not an admin," avoids a flaky network turning into a spurious
+        // Access-Denied / bounce for an account that's actually fine.
+        let result;
         try {
-          const result = await u.getIdTokenResult();
-          if (reqId !== currentReq) return;
-          const admin = result.claims.role === 'ADMIN';
-          setIsAdmin(admin);
-          setUser(u);
-          // Silently RESTORE push registration if a past session already has Notification
-          // permission granted (requestPermission: false — this never shows the OS prompt).
-          // A first-time grant only ever happens via the explicit "Enable Order Alerts"
-          // gesture in EnableAlertsPrompt.jsx, per the no-auto-prompt requirement.
-          if (admin) {
-            initPushNotifications({ requestPermission: false }).then((pushResult) => {
-              if (!pushResult.ok && pushResult.reason !== 'permission-not-yet-requested' && pushResult.reason !== 'no-vapid-key') {
-                console.error('Push notification silent restore failed:', pushResult.reason, pushResult.error || '');
-              }
-            });
+          result = await u.getIdTokenResult();
+        } catch (err1) {
+          console.error('getIdTokenResult() failed, retrying once:', err1);
+          try {
+            await new Promise((r) => setTimeout(r, 800));
+            result = await u.getIdTokenResult(/* forceRefresh */ true);
+          } catch (err2) {
+            console.error('getIdTokenResult() failed again after retry — showing Access Denied, not signing out:', err2);
           }
-        } catch (error) {
-          if (reqId !== currentReq) return;
+        }
+
+        if (reqId !== currentReq) return;
+
+        if (!result) {
+          // Both attempts failed. Deliberately NOT calling signOut() here — the Firebase
+          // session itself is still perfectly valid, only reading its custom claims
+          // failed, and forcing a sign-out on a transient/network error is exactly the
+          // kind of surprise logout this whole investigation is about. Access Denied at
+          // least keeps the session intact so the admin can just retry.
           setIsAdmin(false);
           setUser(u);
+          setLoading(false);
+          return;
         }
+
+        const admin = result.claims.role === 'ADMIN';
+        setIsAdmin(admin);
+        setUser(u);
+        // Silently RESTORE push registration if a past session already has Notification
+        // permission granted (requestPermission: false — this never shows the OS prompt).
+        // A first-time grant only ever happens via the explicit "Enable Order Alerts"
+        // gesture in EnableAlertsPrompt.jsx, per the no-auto-prompt requirement.
+        if (admin) {
+          initPushNotifications({ requestPermission: false }).then((pushResult) => {
+            if (!pushResult.ok && pushResult.reason !== 'permission-not-yet-requested' && pushResult.reason !== 'no-vapid-key') {
+              console.error('Push notification silent restore failed:', pushResult.reason, pushResult.error || '');
+            }
+          });
+        }
+        setLoading(false);
       } else {
         if (reqId !== currentReq) return;
+        if (sawUser) {
+          // Firebase itself reported this session as signed-out — not one of our own
+          // signOut() calls (Navbar/AccessDenied are user-clicks; useIdleLogout is now
+          // 8h). If this fires moments after a successful login, the cause is upstream of
+          // this app — most likely a persistence failure (see config/firebase.js) or the
+          // Firebase project/session being invalidated some other way — check this log
+          // plus whatever browserLocalPersistence fallback warning appears above it.
+          console.error('Firebase Auth reported signed-out without an app-initiated signOut() call. If this followed a login within seconds, check the persistence warnings logged from config/firebase.js.');
+        }
         setUser(null);
         setIsAdmin(false);
         teardownPushNotifications();
+        setLoading(false);
       }
-      setLoading(false);
     });
     return unsub;
   }, []);
