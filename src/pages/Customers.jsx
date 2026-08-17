@@ -16,9 +16,10 @@ function timeAgo(ms) {
   return new Date(ms).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+// 5 statuses (PACKING / READY_FOR_DELIVERY dropped) — one shop, one rider, straightforward flow.
 const STATUS_BADGE_VARIANT = {
-  ORDER_PLACED: 'warning', ORDER_ACCEPTED: 'info', PACKING: 'info',
-  READY_FOR_DELIVERY: 'info', OUT_FOR_DELIVERY: 'info', DELIVERED: 'success', CANCELLED: 'error',
+  ORDER_PLACED: 'warning', ORDER_ACCEPTED: 'info',
+  OUT_FOR_DELIVERY: 'info', DELIVERED: 'success', CANCELLED: 'error',
 };
 
 // Row click opens this: every order this customer has ever placed, id/date/items/amount/status.

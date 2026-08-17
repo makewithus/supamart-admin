@@ -12,13 +12,17 @@ import PageHeader from '../components/ui/PageHeader';
 import EmptyState from '../components/ui/EmptyState';
 import IconChip from '../components/ui/IconChip';
 
+// Kept in sync with the real order statuses (mirrors Orders.jsx / OrderDetailsModal.jsx) —
+// this used to list PENDING/CONFIRMED/PACKING, none of which are real order statuses, so
+// every recent order silently fell back to an unstyled neutral badge showing the raw
+// "ORDER_PLACED" string. 5 statuses (PACKING / READY_FOR_DELIVERY dropped) — one shop, one
+// rider, straightforward flow.
 const STATUS_BADGE = {
-  PENDING:    { label: 'Pending',    v: 'warning'  },
-  CONFIRMED:  { label: 'Confirmed',  v: 'info'     },
-  PACKING:    { label: 'Packing',    v: 'info'     },
-  OUT_FOR_DELIVERY: { label: 'Out for Delivery', v: 'info' },
-  DELIVERED:  { label: 'Delivered',  v: 'success'  },
-  CANCELLED:  { label: 'Cancelled',  v: 'error'    },
+  ORDER_PLACED:     { label: 'Placed',           v: 'warning' },
+  ORDER_ACCEPTED:   { label: 'Accepted',         v: 'info'    },
+  OUT_FOR_DELIVERY: { label: 'Out for Delivery', v: 'info'    },
+  DELIVERED:        { label: 'Delivered',        v: 'success' },
+  CANCELLED:        { label: 'Cancelled',        v: 'error'   },
 };
 
 function fmt(n) {

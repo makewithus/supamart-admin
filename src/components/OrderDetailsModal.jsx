@@ -11,43 +11,60 @@ import productImages from '../utils/productImages';
 
 // Mirrors backend/src/config/constants.js ORDER_STATUS_FLOW exactly — the backend only
 // accepts a forward one-step move (or a jump straight to CANCELLED at any point), never an
-// arbitrary jump. The dropdown used to list all 7 statuses regardless of the order's current
+// arbitrary jump. The dropdown used to list all statuses regardless of the order's current
 // state, so picking anything but the single valid next status threw "Invalid transition X ->
 // Y" — that's what looked like "only a few of them work." Computing the actual valid next
 // step here means every option in the dropdown is guaranteed to succeed.
-const ORDER_STATUS_FLOW = ['ORDER_PLACED', 'ORDER_ACCEPTED', 'PACKING', 'READY_FOR_DELIVERY', 'OUT_FOR_DELIVERY', 'DELIVERED'];
+//
+// Collapsed from 7 to 5 statuses (dropped PACKING / READY_FOR_DELIVERY) — one shop, one
+// rider, so those two intermediate clicks never carried distinct real-world information.
+const ORDER_STATUS_FLOW = ['ORDER_PLACED', 'ORDER_ACCEPTED', 'OUT_FOR_DELIVERY', 'DELIVERED'];
 const TERMINAL_STATUSES = ['DELIVERED', 'CANCELLED'];
 const STATUS_LABELS = {
   ORDER_PLACED: 'Order Placed',
   ORDER_ACCEPTED: 'Accepted',
-  PACKING: 'Packing',
-  READY_FOR_DELIVERY: 'Ready for Delivery',
   OUT_FOR_DELIVERY: 'Out for Delivery',
   DELIVERED: 'Delivered',
   CANCELLED: 'Cancelled',
 };
 
+// Defensive fallback only — every real status has an entry in STATUS_LABELS above. This
+// just keeps a stray/legacy status value (e.g. one not yet migrated) from ever rendering
+// as a raw SCREAMING_SNAKE_CASE string in the UI.
+function humanizeStatus(raw) {
+  return raw.replace(/_/g, ' ').replace(/\w\S*/g, (w) => w[0] + w.slice(1).toLowerCase());
+}
+
 // Returns { options, note } — options is always a subset the backend will actually accept
-// for a PATCH /orders/:id/status from this order's current state.
+// for a PATCH /orders/:id/status from this order's current state. The backend allows any
+// forward move (not just the immediate next step — see assertValidTransition in
+// orderService.js), so every status from the order's current position onward, plus
+// CANCELLED, is offered here — the admin can jump straight to the right one instead of
+// clicking through each intermediate status.
 function getStatusOptions(order) {
   if (!order) return { options: [], note: null };
   if (TERMINAL_STATUSES.includes(order.status)) {
     return { options: [order.status], note: 'This order is finalized — its status can no longer be changed.' };
   }
   const idx = ORDER_STATUS_FLOW.indexOf(order.status);
-  const nextInFlow = idx >= 0 && idx + 1 < ORDER_STATUS_FLOW.length ? ORDER_STATUS_FLOW[idx + 1] : null;
   // Backend hard-blocks advancing a UPI_MANUAL order past its current status until the
   // customer has at least claimed payment (AWAITING_CONFIRMATION) or the shop marked it PAID.
   const paymentBlocksAdvance =
     order.paymentMethod === 'UPI_MANUAL' && order.paymentStatus === 'PENDING';
 
   const options = [order.status];
-  if (nextInFlow && !paymentBlocksAdvance) options.push(nextInFlow);
+  if (idx >= 0 && !paymentBlocksAdvance) options.push(...ORDER_STATUS_FLOW.slice(idx + 1));
   options.push('CANCELLED');
 
   const note = paymentBlocksAdvance
     ? "UPI payment hasn't been confirmed yet — this order can only be cancelled until then."
-    : null;
+    // The backend only accepts a forward move within the known flow (see
+    // assertValidTransition) — a status outside that flow entirely can't be advanced, only
+    // cancelled. Shouldn't happen for any current order (see collapsePackingReadyStatus.js),
+    // but stays honest about what will and won't actually succeed if it ever does.
+    : idx === -1
+      ? "This order has a legacy status outside the normal flow — it can only be cancelled."
+      : null;
   return { options, note };
 }
 

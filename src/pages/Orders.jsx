@@ -13,11 +13,10 @@ import Select from '../components/ui/Select';
 import OrderDetailsModal from '../components/OrderDetailsModal';
 import { onSnapshot } from 'firebase/firestore';
 
+// 5 statuses (PACKING / READY_FOR_DELIVERY dropped) — one shop, one rider, straightforward flow.
 const STATUS_BADGE = {
   ORDER_PLACED:        { label: 'Placed',            v: 'warning' },
   ORDER_ACCEPTED:      { label: 'Accepted',           v: 'info'    },
-  PACKING:             { label: 'Packing',            v: 'info'    },
-  READY_FOR_DELIVERY:  { label: 'Ready for Delivery', v: 'info'    },
   OUT_FOR_DELIVERY:    { label: 'Out for Delivery',   v: 'info'    },
   DELIVERED:           { label: 'Delivered',          v: 'success' },
   CANCELLED:           { label: 'Cancelled',          v: 'error'   },
