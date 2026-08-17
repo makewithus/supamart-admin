@@ -9,6 +9,7 @@ import EmptyState from '../components/ui/EmptyState';
 import PageHeader from '../components/ui/PageHeader';
 import Modal from '../components/ui/Modal';
 import toast from 'react-hot-toast';
+import { optimizeCloudinaryUrl } from '../utils/cloudinaryImage';
 
 function timeAgo(ms) {
   if (!ms) return '—';
@@ -150,7 +151,7 @@ export default function Customers() {
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-secondary-100 flex items-center justify-center flex-shrink-0">
                           {c.photoURL
-                            ? <img src={c.photoURL} alt={c.name} loading="lazy" decoding="async" className="w-full h-full rounded-full object-cover" />
+                            ? <img src={optimizeCloudinaryUrl(c.photoURL, 100)} alt={c.name} loading="lazy" decoding="async" className="w-full h-full rounded-full object-cover" />
                             : <UserCircle2 size={16} className="text-secondary-700" />
                           }
                         </div>

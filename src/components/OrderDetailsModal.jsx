@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Loader2, User, MapPin, Package, Clock } from 'lucide-react';
 import Button from './ui/Button';
 import Badge from './ui/Badge';
+import Select from './ui/Select';
 import toast from 'react-hot-toast';
 import { apiPatch } from '../services/api';
 import { collection, query, where, getDocs } from 'firebase/firestore';
@@ -208,16 +209,15 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
         <div className="flex items-end gap-3">
           <div className="flex-1">
             <label className="block text-xs font-semibold text-neutral-500 mb-1">Update Status</label>
-            <select
-              className="w-full px-4 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm focus:outline-none focus:border-primary-900 disabled:opacity-60"
+            <Select
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={setStatus}
               disabled={statusOptions.length <= 1}
-            >
-              {statusOptions.map(s => (
-                <option key={s} value={s}>{STATUS_LABELS[s] || s}{s === order.status ? ' (current)' : ''}</option>
-              ))}
-            </select>
+              options={statusOptions.map((s) => ({
+                value: s,
+                label: `${STATUS_LABELS[s] || s}${s === order.status ? ' (current)' : ''}`,
+              }))}
+            />
             {statusNote && <p className="text-xs text-amber-600 font-medium mt-1.5">{statusNote}</p>}
           </div>
           <Button variant="primary" onClick={handleUpdateStatus} disabled={loading || status === order.status}>
@@ -228,14 +228,14 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
         <div className="flex items-end gap-3">
           <div className="flex-1">
             <label className="block text-xs font-semibold text-neutral-500 mb-1">Assign Delivery Partner</label>
-            <select 
-              className="w-full px-4 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm focus:outline-none focus:border-primary-900"
+            <Select
               value={partnerId}
-              onChange={(e) => setPartnerId(e.target.value)}
-            >
-              <option value="">-- Unassigned --</option>
-              {partners.map(p => <option key={p.id} value={p.id}>{p.name || p.phone || p.id}</option>)}
-            </select>
+              onChange={setPartnerId}
+              options={[
+                { value: '', label: '-- Unassigned --' },
+                ...partners.map((p) => ({ value: p.id, label: p.name || p.phone || p.id })),
+              ]}
+            />
           </div>
           <Button variant="outlined" onClick={handleAssignPartner} disabled={loading || partnerId === order.assignedPartnerId}>
             {loading ? <Loader2 size={16} className="animate-spin" /> : 'Assign'}

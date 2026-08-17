@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Tag, Plus, Edit2, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Tag, Plus, Edit2, Trash2, Search } from 'lucide-react';
 import { db } from '../config/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import Card from '../components/ui/Card';
@@ -14,10 +14,12 @@ import BrandForm from '../components/BrandForm';
 import { apiDel } from '../services/api';
 import toast from 'react-hot-toast';
 import brandLogos from '../utils/brandLogos';
+import { optimizeCloudinaryUrl } from '../utils/cloudinaryImage';
 
 export default function Brands() {
   const [brands, setBrands] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBrand, setEditingBrand] = useState(null);
@@ -59,6 +61,11 @@ export default function Brands() {
     setIsModalOpen(true);
   };
 
+  const filtered = useMemo(
+    () => brands.filter((b) => !search || b.name?.toLowerCase().includes(search.toLowerCase())),
+    [brands, search]
+  );
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-neutral-50 min-h-screen">
       <PageHeader title="Brands" subtitle={`${brands.length} brands`}>
@@ -67,13 +74,36 @@ export default function Brands() {
         </Button>
       </PageHeader>
 
+      {/* With 80+ brands, browsing without a way to jump to one by name was the gap here —
+          every other list page in the portal has a search box, this one didn't. */}
+      {!loading && brands.length > 0 && (
+        <Card className="mb-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+              <input
+                type="text"
+                placeholder="Search brands…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 pr-4 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900
+                  placeholder:text-neutral-400 focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10 transition-all w-64"
+              />
+            </div>
+            <Badge variant="neutral">{filtered.length} of {brands.length}</Badge>
+          </div>
+        </Card>
+      )}
+
       {loading ? (
         <Card><Loader text="Loading brands…" /></Card>
       ) : brands.length === 0 ? (
         <Card><EmptyState icon={Tag} title="No brands yet" message="Add your first brand so products can be filtered by it." action="Add Brand" onAction={handleAddClick} /></Card>
+      ) : filtered.length === 0 ? (
+        <Card><EmptyState icon={Search} title="No brands found" message="Try a different search term." /></Card>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-5">
-          {brands.map((b, i) => (
+          {filtered.map((b, i) => (
             <div
               key={b.id}
               onClick={() => handleEditClick(b)}
@@ -85,7 +115,7 @@ export default function Brands() {
                     overrides the bundled default -- same priority as product/category
                     images -- so editing a brand's logo here actually shows up. */}
                 {b.logoUrl
-                  ? <img src={b.logoUrl} alt={b.name} loading="lazy" decoding="async" className="w-full h-full object-contain p-2" />
+                  ? <img src={optimizeCloudinaryUrl(b.logoUrl, 200)} alt={b.name} loading="lazy" decoding="async" className="w-full h-full object-contain p-2" />
                   : brandLogos[b.name]
                   ? <img src={brandLogos[b.name]} alt={b.name} loading="lazy" decoding="async" className="w-full h-full object-contain p-2" />
                   : <Tag size={24} className="text-neutral-300" />

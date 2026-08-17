@@ -17,6 +17,7 @@ import toast from 'react-hot-toast';
 import categoryImages from '../utils/categoryImages';
 import subCategoryImages from '../utils/subCategoryImages';
 import slugify from '../utils/slugify';
+import { optimizeCloudinaryUrl } from '../utils/cloudinaryImage';
 
 // Groups top-level categories together with their own sub-categories so the
 // hierarchy is explicit in the DOM structure, not implied by grid ordering + an
@@ -110,7 +111,7 @@ export default function Categories() {
                       overrides the bundled default -- otherwise editing a category's image
                       here would save successfully but silently never actually show up. */}
                   {parent.image
-                    ? <img src={parent.image} alt={parent.name} loading="lazy" decoding="async" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
+                    ? <img src={optimizeCloudinaryUrl(parent.image, 150)} alt={parent.name} loading="lazy" decoding="async" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
                     : categoryImages[slugify(parent.name)]
                     ? <img src={categoryImages[slugify(parent.name)]} alt={parent.name} loading="lazy" decoding="async" className="w-full h-full object-contain" />
                     : <Image size={26} className="text-neutral-300" />
@@ -152,7 +153,7 @@ export default function Categories() {
                             overrides the bundled default -- otherwise editing a sub-category's
                             image here would save successfully but silently never show up. */}
                         {c.image
-                          ? <img src={c.image} alt={c.name} loading="lazy" decoding="async" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
+                          ? <img src={optimizeCloudinaryUrl(c.image, 150)} alt={c.name} loading="lazy" decoding="async" className="w-full h-full object-contain" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} />
                           : subCategoryImages[`${slugify(parent.name)}-${slugify(c.name)}`]
                           ? <img src={subCategoryImages[`${slugify(parent.name)}-${slugify(c.name)}`]} alt={c.name} loading="lazy" decoding="async" className="w-full h-full object-contain" />
                           : <Image size={16} className="text-neutral-300" />

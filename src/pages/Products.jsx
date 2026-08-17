@@ -10,11 +10,13 @@ import EmptyState from '../components/ui/EmptyState';
 import PageHeader from '../components/ui/PageHeader';
 import productImages from '../utils/productImages';
 import Modal from '../components/ui/Modal';
+import Select from '../components/ui/Select';
 import ConfirmModal from '../components/ui/ConfirmModal';
 import ProductForm from '../components/ProductForm';
 import { onSnapshot } from 'firebase/firestore';
 import { apiDel } from '../services/api';
 import toast from 'react-hot-toast';
+import { optimizeCloudinaryUrl } from '../utils/cloudinaryImage';
 
 const AVAIL_BADGE = {
   AVAILABLE:    { label: 'Available',    v: 'success'  },
@@ -159,30 +161,33 @@ export default function Products() {
                 placeholder:text-neutral-400 focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10 transition-all"
             />
           </div>
-          <select
+          <Select
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900 focus:outline-none focus:border-primary-900 max-w-[180px]"
-          >
-            <option value="ALL">All categories</option>
-            {categories.filter((c) => !c.parentId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select
+            onChange={setCategoryFilter}
+            className="w-44"
+            options={[
+              { value: 'ALL', label: 'All categories' },
+              ...categories.filter((c) => !c.parentId).map((c) => ({ value: c.id, label: c.name })),
+            ]}
+          />
+          <Select
             value={brandFilter}
-            onChange={(e) => setBrandFilter(e.target.value)}
-            className="px-3 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900 focus:outline-none focus:border-primary-900 max-w-[160px]"
-          >
-            <option value="ALL">All brands</option>
-            {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-          <select
+            onChange={setBrandFilter}
+            className="w-40"
+            options={[
+              { value: 'ALL', label: 'All brands' },
+              ...brands.map((b) => ({ value: b.id, label: b.name })),
+            ]}
+          />
+          <Select
             value={availFilter}
-            onChange={(e) => setAvailFilter(e.target.value)}
-            className="px-3 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900 focus:outline-none focus:border-primary-900"
-          >
-            <option value="ALL">Any availability</option>
-            {Object.entries(AVAIL_BADGE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          </select>
+            onChange={setAvailFilter}
+            className="w-44"
+            options={[
+              { value: 'ALL', label: 'Any availability' },
+              ...Object.entries(AVAIL_BADGE).map(([k, v]) => ({ value: k, label: v.label })),
+            ]}
+          />
           <button
             onClick={() => setLowStockOnly((v) => !v)}
             className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
@@ -220,7 +225,7 @@ export default function Products() {
                   // real picture (e.g. new packaging) from ProductForm without a rebuild.
                   const rawImg = p.images?.[0]?.url || p.images?.[0];
                   const isGenericStock = rawImg && /res\.cloudinary\.com\/demo\//.test(rawImg);
-                  const img = (rawImg && !isGenericStock) ? rawImg : (productImages[p.name] || null);
+                  const img = (rawImg && !isGenericStock) ? optimizeCloudinaryUrl(rawImg, 150) : (productImages[p.name] || null);
                   const stock = totalStock(p);
                   return (
                     <tr key={p.id} className="border-b border-neutral-50 hover:bg-neutral-50/80 transition-colors group">

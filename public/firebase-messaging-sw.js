@@ -26,6 +26,18 @@ messaging.onBackgroundMessage((payload) => {
     icon: '/logo.png',
     badge: '/logo.png',
     tag: payload.data?.orderId || 'ms-traders-order',
+    // Makes this read like a real message/call alert (WhatsApp-style) instead of a quiet
+    // background notification: vibrates the device, stays on screen until the admin
+    // actually dismisses/taps it instead of auto-disappearing after a few seconds, and is
+    // never silenced — Chrome/Android use the OS's default notification sound here by
+    // default (there's no way for a background service worker to play our own custom
+    // Web Audio chime — only a page that's actually open/foregrounded can do that; this is
+    // the platform's own "someone messaged you" sound, playing regardless of screen-off/
+    // app-backgrounded, exactly like WhatsApp's).
+    vibrate: [300, 150, 300, 150, 300],
+    requireInteraction: true,
+    renotify: true,
+    silent: false,
   });
 });
 

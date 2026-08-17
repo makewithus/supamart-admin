@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Zap, ShieldOff } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Toaster } from 'react-hot-toast';
@@ -11,10 +11,24 @@ import NewOrderBanner from './components/NewOrderBanner';
 import EnableAlertsPrompt from './components/EnableAlertsPrompt';
 import useIdleLogout from './hooks/useIdleLogout';
 import useNewOrderAlert from './hooks/useNewOrderAlert';
-import { isAudioUnlocked } from './utils/notificationSound';
+import { autoUnlockOnFirstInteraction } from './utils/notificationSound';
 import { initPushNotifications, teardownPushNotifications } from './services/pushNotifications';
 
+// Persistent (not sessionStorage) — once dismissed, stays dismissed across reloads/new
+// tabs/browser restarts. Combined with the Notification.permission check below, the
+// "Enable Order Alerts" banner now shows at most once ever per browser, instead of
+// re-appearing on every load.
 const ALERTS_DISMISSED_KEY = 'ms_admin_alerts_prompt_dismissed';
+
+function shouldShowEnablePrompt() {
+  if (typeof Notification === 'undefined') return false;
+  // 'granted' or 'denied' both mean the admin already made this decision once — the
+  // browser itself remembers it permanently, so re-showing our own banner on top of that
+  // is exactly the "asks every time" annoyance being fixed here. Only 'default' (never
+  // asked) is worth prompting for.
+  if (Notification.permission !== 'default') return false;
+  return localStorage.getItem(ALERTS_DISMISSED_KEY) !== '1';
+}
 
 // Each admin page is its own chunk — only the page the admin is currently on
 // gets downloaded, instead of one ~800kB bundle for all 7 pages up front.
@@ -38,15 +52,17 @@ function PageFallback() {
 function AppShell() {
   const navigate = useNavigate();
   const [orderAlert, setOrderAlert] = useState(null);
-  // Re-evaluated on every mount (i.e. every fresh load/reload) rather than cached in state
-  // from a previous session: a freshly-created AudioContext genuinely starts 'suspended'
-  // again on each page load in the strictest browsers, so the prompt is meant to reappear
-  // until the admin has interacted this session — see EnableAlertsPrompt.jsx.
-  const [showEnablePrompt, setShowEnablePrompt] = useState(
-    () => !isAudioUnlocked() && sessionStorage.getItem(ALERTS_DISMISSED_KEY) !== '1'
-  );
+  const [showEnablePrompt, setShowEnablePrompt] = useState(shouldShowEnablePrompt);
 
   useNewOrderAlert(true, useCallback((order) => setOrderAlert(order), []));
+
+  // The audio unlock itself doesn't need its own visible prompt — it happens the moment
+  // the admin clicks/taps/types anywhere on the dashboard, which happens naturally within
+  // seconds of opening it. Only Notification permission needs an explicit ask (see
+  // shouldShowEnablePrompt above).
+  useEffect(() => {
+    autoUnlockOnFirstInteraction();
+  }, []);
 
   const handleViewOrder = () => {
     if (orderAlert) navigate('/orders', { state: { openOrderId: orderAlert.id } });
@@ -54,7 +70,7 @@ function AppShell() {
   };
 
   const dismissEnablePrompt = () => {
-    sessionStorage.setItem(ALERTS_DISMISSED_KEY, '1');
+    localStorage.setItem(ALERTS_DISMISSED_KEY, '1');
     setShowEnablePrompt(false);
   };
 
@@ -82,6 +98,9 @@ function AppShell() {
             <Route path="/brands"     element={<Brands />}    />
             <Route path="/customers"  element={<Customers />} />
             <Route path="/offers"     element={<Offers />}    />
+            {/* Signed-in admin landing on the login URL (e.g. a stale bookmark) — send
+                them to the dashboard instead of showing nothing (no route matches here). */}
+            <Route path="/admin-login" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
       </main>
@@ -188,7 +207,14 @@ export default function App() {
   if (!user) {
     return (
       <Router>
-        <Login />
+        <Routes>
+          <Route path="/admin-login" element={<Login />} />
+          {/* Any other URL while signed out — including a bookmark/direct link like
+              /accounts or /products — lands on the login page, and the address bar
+              rewrites to /admin-login instead of silently showing Login at whatever
+              path was typed. */}
+          <Route path="*" element={<Navigate to="/admin-login" replace />} />
+        </Routes>
       </Router>
     );
   }

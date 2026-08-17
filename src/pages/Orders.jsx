@@ -9,6 +9,7 @@ import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import PageHeader from '../components/ui/PageHeader';
 import Modal from '../components/ui/Modal';
+import Select from '../components/ui/Select';
 import OrderDetailsModal from '../components/OrderDetailsModal';
 import { onSnapshot } from 'firebase/firestore';
 
@@ -127,21 +128,22 @@ export default function Orders() {
                 placeholder:text-neutral-400 focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10 transition-all w-64"
             />
           </div>
-          <select
+          <Select
             value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
-            className="px-3 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900 focus:outline-none focus:border-primary-900"
-          >
-            {Object.entries(DATE_RANGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          </select>
-          <select
+            onChange={setDateRange}
+            className="w-40"
+            options={Object.entries(DATE_RANGES).map(([k, v]) => ({ value: k, label: v.label }))}
+          />
+          <Select
             value={paymentFilter}
-            onChange={(e) => setPaymentFilter(e.target.value)}
-            className="px-3 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900 focus:outline-none focus:border-primary-900"
-          >
-            <option value="ALL">Any payment status</option>
-            {ALL_PAYMENT_STATUSES.map((s) => <option key={s} value={s}>{PAYMENT_BADGE[s].label}</option>)}
-          </select>
+            onChange={setPaymentFilter}
+            className="w-52"
+            placeholder="Any payment status"
+            options={[
+              { value: 'ALL', label: 'Any payment status' },
+              ...ALL_PAYMENT_STATUSES.map((s) => ({ value: s, label: PAYMENT_BADGE[s].label })),
+            ]}
+          />
           {hasActiveFilters && (
             <button onClick={clearFilters} className="text-xs font-semibold text-neutral-400 hover:text-primary-900 underline">
               Clear filters
