@@ -7,8 +7,15 @@ import { auth } from '../config/firebase';
 // stays signed in forever — this re-prompts credentials once the console has
 // been left idle. The last-activity timestamp lives in localStorage so the
 // timer survives a page refresh and is shared across tabs.
+//
+// 10 min was the original value here, but this dashboard is explicitly meant to sit open
+// on a shop PC/tablet all day, passively watching for new-order push alerts (see
+// useNewOrderAlert/EnableAlertsPrompt) — nobody touches the mouse/keyboard while just
+// glancing at it for new orders. That made this fire constantly during completely normal
+// use, forcing a "logged in, then bounced back to login" loop every ~10 idle minutes.
+// 8 hours covers a full shop shift while still logging out overnight if the PC is left on.
 
-const IDLE_LIMIT_MS   = 10 * 60 * 1000; // sign out after 10 min idle
+const IDLE_LIMIT_MS   = 8 * 60 * 60 * 1000; // sign out after 8 hours idle (was 10 min — far too aggressive for an always-open dashboard)
 const CHECK_EVERY_MS  = 20 * 1000;      // how often we re-check the timestamp
 const WRITE_THROTTLE_MS = 5 * 1000;     // don't touch localStorage on every mousemove
 const STORAGE_KEY = 'ms_admin_last_activity';

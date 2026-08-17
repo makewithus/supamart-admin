@@ -17,9 +17,6 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      // Stamp this session with the running build so a later redeploy invalidates
-      // it (see App.jsx). Set before sign-in to avoid racing the auth listener.
-      localStorage.setItem('ms_admin_build_id', __BUILD_ID__);
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err) {
       const msgs = {
