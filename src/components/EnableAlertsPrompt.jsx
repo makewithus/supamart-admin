@@ -4,15 +4,7 @@ import toast from 'react-hot-toast';
 import { getAudioContext, isAudioUnlocked, playNotificationSound } from '../utils/notificationSound';
 import { initPushNotifications, getPushDiagnostics } from '../services/pushNotifications';
 
-// Section 5's explicit requirement: browsers won't autoplay audio (or, generally, prompt
-// for Notification permission) without a real user gesture. This is that one gesture,
-// requested once. Clicking "Enable Order Alerts":
-//   1. Creates/resumes the AudioContext synchronously inside the click handler — the only
-//      way resume() actually succeeds instead of silently staying 'suspended'.
-//   2. Plays the real chime immediately, so the click doubles as the "Test Alert Sound"
-//      confirmation the admin can actually hear.
-//   3. Requests Notification permission and registers the FCM token for background/other-
-//      tab pushes (best-effort — foreground alerts already work without this).
+
 export default function EnableAlertsPrompt({ show, onEnabled, onDismiss }) {
   const [busy, setBusy] = useState(false);
 
