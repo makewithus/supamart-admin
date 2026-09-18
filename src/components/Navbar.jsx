@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Package, ShoppingCart, Layers, Users, LogOut, Tag, BadgePercent, Wallet, Menu, X, Volume2,
+  LayoutDashboard, Package, ShoppingCart, Layers, Users, LogOut, Tag, BadgePercent, Wallet, Menu, X, Volume2, Settings as SettingsIcon
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { auth } from '../config/firebase';
@@ -11,11 +11,13 @@ const NAV = [
   { to: '/',           icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/products',   icon: Package,         label: 'Products'  },
   { to: '/orders',     icon: ShoppingCart,    label: 'Orders'    },
+  { to: '/delivery-partners', icon: Package,  label: 'Deliveries'},
   { to: '/accounts',   icon: Wallet,          label: 'Accounts'  },
   { to: '/categories', icon: Layers,          label: 'Categories'},
   { to: '/brands',     icon: Tag,             label: 'Brands'    },
   { to: '/customers',  icon: Users,           label: 'Customers' },
   { to: '/offers',     icon: BadgePercent,    label: 'Offers'    },
+  { to: '/settings',   icon: SettingsIcon,    label: 'Settings'  },
 ];
 
 export default function Navbar() {

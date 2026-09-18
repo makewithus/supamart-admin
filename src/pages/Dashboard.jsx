@@ -18,11 +18,13 @@ import IconChip from '../components/ui/IconChip';
 // "ORDER_PLACED" string. 5 statuses (PACKING / READY_FOR_DELIVERY dropped) — one shop, one
 // rider, straightforward flow.
 const STATUS_BADGE = {
-  ORDER_PLACED:     { label: 'Placed',           v: 'warning' },
-  ORDER_ACCEPTED:   { label: 'Accepted',         v: 'info'    },
-  OUT_FOR_DELIVERY: { label: 'Out for Delivery', v: 'info'    },
-  DELIVERED:        { label: 'Delivered',        v: 'success' },
-  CANCELLED:        { label: 'Cancelled',        v: 'error'   },
+  ORDER_PLACED:        { label: 'Placed',            v: 'warning' },
+  ORDER_ACCEPTED:      { label: 'Accepted',          v: 'info'    },
+  OUT_FOR_DELIVERY:    { label: 'Out for Delivery',  v: 'info'    },
+  PENDING_CONFIRMATION:{ label: 'Pending Confirm',   v: 'warning' },
+  DELIVERY_DISPUTED:   { label: 'Disputed',          v: 'error'   },
+  DELIVERED:           { label: 'Delivered',         v: 'success' },
+  CANCELLED:           { label: 'Cancelled',         v: 'error'   },
 };
 
 function fmt(n) {

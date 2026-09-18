@@ -17,9 +17,10 @@ function timeAgo(ms) {
 }
 
 // 5 statuses (PACKING / READY_FOR_DELIVERY dropped) — one shop, one rider, straightforward flow.
-const STATUS_BADGE_VARIANT = {
+const STATUS_COLORS = {
   ORDER_PLACED: 'warning', ORDER_ACCEPTED: 'info',
-  OUT_FOR_DELIVERY: 'info', DELIVERED: 'success', CANCELLED: 'error',
+  OUT_FOR_DELIVERY: 'info', PENDING_CONFIRMATION: 'warning', 
+  DELIVERY_DISPUTED: 'error', DELIVERED: 'success', CANCELLED: 'error'
 };
 
 // Row click opens this: every order this customer has ever placed, id/date/items/amount/status.

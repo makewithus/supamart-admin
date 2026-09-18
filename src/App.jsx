@@ -32,14 +32,16 @@ function shouldShowEnablePrompt() {
 
 // Each admin page is its own chunk — only the page the admin is currently on
 // gets downloaded, instead of one ~800kB bundle for all 7 pages up front.
-const Dashboard  = lazy(() => import('./pages/Dashboard'));
-const Products   = lazy(() => import('./pages/Products'));
-const Orders     = lazy(() => import('./pages/Orders'));
-const Accounts   = lazy(() => import('./pages/Accounts'));
-const Categories = lazy(() => import('./pages/Categories'));
-const Brands     = lazy(() => import('./pages/Brands'));
-const Customers  = lazy(() => import('./pages/Customers'));
-const Offers     = lazy(() => import('./pages/Offers'));
+const Dashboard        = lazy(() => import('./pages/Dashboard'));
+const Products         = lazy(() => import('./pages/Products'));
+const Orders           = lazy(() => import('./pages/Orders'));
+const Accounts         = lazy(() => import('./pages/Accounts'));
+const DeliveryPartners = lazy(() => import('./pages/DeliveryPartners'));
+const Categories       = lazy(() => import('./pages/Categories'));
+const Brands           = lazy(() => import('./pages/Brands'));
+const Customers        = lazy(() => import('./pages/Customers'));
+const Offers           = lazy(() => import('./pages/Offers'));
+const Settings         = lazy(() => import('./pages/Settings'));
 
 function PageFallback() {
   return (
@@ -89,15 +91,17 @@ function AppShell() {
         )}
         <Suspense fallback={<PageFallback />}>
           <Routes>
-            <Route path="/"           element={<Dashboard />} />
-            <Route path="/dashboard"  element={<Dashboard />} />
-            <Route path="/products"   element={<Products />}  />
-            <Route path="/orders"     element={<Orders />}    />
-            <Route path="/accounts"   element={<Accounts />}  />
-            <Route path="/categories" element={<Categories />}/>
-            <Route path="/brands"     element={<Brands />}    />
-            <Route path="/customers"  element={<Customers />} />
-            <Route path="/offers"     element={<Offers />}    />
+            <Route path="/"                   element={<Dashboard />} />
+            <Route path="/dashboard"          element={<Dashboard />} />
+            <Route path="/products"           element={<Products />}  />
+            <Route path="/orders"             element={<Orders />}    />
+            <Route path="/delivery-partners"  element={<DeliveryPartners />} />
+            <Route path="/accounts"           element={<Accounts />}  />
+            <Route path="/categories"         element={<Categories />}/>
+            <Route path="/brands"             element={<Brands />}    />
+            <Route path="/customers"          element={<Customers />} />
+            <Route path="/offers"             element={<Offers />}    />
+            <Route path="/settings"           element={<Settings />}  />
             {/* Signed-in admin landing on the login URL (e.g. a stale bookmark) — send
                 them to the dashboard instead of showing nothing (no route matches here). */}
             <Route path="/admin-login" element={<Navigate to="/" replace />} />

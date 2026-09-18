@@ -18,12 +18,14 @@ import productImages from '../utils/productImages';
 //
 // Collapsed from 7 to 5 statuses (dropped PACKING / READY_FOR_DELIVERY) — one shop, one
 // rider, so those two intermediate clicks never carried distinct real-world information.
-const ORDER_STATUS_FLOW = ['ORDER_PLACED', 'ORDER_ACCEPTED', 'OUT_FOR_DELIVERY', 'DELIVERED'];
+const ORDER_STATUS_FLOW = ['ORDER_PLACED', 'ORDER_ACCEPTED', 'OUT_FOR_DELIVERY', 'PENDING_CONFIRMATION', 'DELIVERED'];
 const TERMINAL_STATUSES = ['DELIVERED', 'CANCELLED'];
 const STATUS_LABELS = {
   ORDER_PLACED: 'Order Placed',
   ORDER_ACCEPTED: 'Accepted',
   OUT_FOR_DELIVERY: 'Out for Delivery',
+  PENDING_CONFIRMATION: 'Pending Confirmation',
+  DELIVERY_DISPUTED: 'Delivery Disputed',
   DELIVERED: 'Delivered',
   CANCELLED: 'Cancelled',
 };
@@ -54,7 +56,7 @@ function getStatusOptions(order) {
 
   const options = [order.status];
   if (idx >= 0 && !paymentBlocksAdvance) options.push(...ORDER_STATUS_FLOW.slice(idx + 1));
-  options.push('CANCELLED');
+  options.push('DELIVERY_DISPUTED', 'CANCELLED');
 
   const note = paymentBlocksAdvance
     ? "UPI payment hasn't been confirmed yet — this order can only be cancelled until then."
@@ -84,7 +86,7 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
   useEffect(() => {
     const fetchPartners = async () => {
       try {
-        const q = query(collection(db, 'users'), where('role', '==', 'PARTNER'));
+        const q = query(collection(db, 'deliveryPartners'), where('isActive', '==', true));
         const snap = await getDocs(q);
         setPartners(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       } catch (e) {
@@ -100,7 +102,6 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
     try {
       await apiPatch(`/orders/${order.id}/status`, { status });
       toast.success('Order status updated');
-      onSuccess();
     } catch (e) {
       toast.error(e.message || 'Failed to update status');
     } finally {
@@ -114,7 +115,6 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
     try {
       await apiPatch(`/orders/${order.id}/assign`, { partnerId });
       toast.success('Delivery partner assigned');
-      onSuccess();
     } catch (e) {
       toast.error(e.message || 'Failed to assign partner');
     } finally {
@@ -242,22 +242,42 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
           </Button>
         </div>
 
+        {/* Delivery Partner */}
         <div className="flex items-end gap-3">
           <div className="flex-1">
-            <label className="block text-xs font-semibold text-neutral-500 mb-1">Assign Delivery Partner</label>
+            <label className="block text-xs font-semibold text-neutral-500 mb-1">Delivery Partner</label>
             <Select
               value={partnerId}
               onChange={setPartnerId}
+              disabled={TERMINAL_STATUSES.includes(order.status)}
               options={[
-                { value: '', label: '-- Unassigned --' },
-                ...partners.map((p) => ({ value: p.id, label: p.name || p.phone || p.id })),
+                { value: '', label: 'Unassigned' },
+                ...partners.map(p => ({ value: p.id, label: `${p.name} (${p.mobile || p.phone || ''})` }))
               ]}
             />
           </div>
-          <Button variant="outlined" onClick={handleAssignPartner} disabled={loading || partnerId === order.assignedPartnerId}>
-            {loading ? <Loader2 size={16} className="animate-spin" /> : 'Assign'}
+          <Button 
+            variant="primary" 
+            onClick={handleAssignPartner}
+            disabled={loading || partnerId === (order.assignedPartnerId || '') || TERMINAL_STATUSES.includes(order.status)}
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Assign Partner'}
           </Button>
         </div>
+
+        {/* Delivery Rating */}
+        {order.deliveryRating && (
+          <div className="flex items-start gap-3 pt-2 border-t border-neutral-100">
+            <span className="text-xl">⭐</span>
+            <div className="flex-1">
+              <div className="text-sm font-medium text-gray-900">Delivery Rating</div>
+              <div className="text-sm text-gray-500 mt-1">
+                <span className="font-bold text-yellow-500">{order.deliveryRating} / 5</span>
+                {order.deliveryReview && ` - "${order.deliveryReview}"`}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end pt-4">

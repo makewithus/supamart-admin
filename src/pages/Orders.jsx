@@ -18,6 +18,8 @@ const STATUS_BADGE = {
   ORDER_PLACED:        { label: 'Placed',            v: 'warning' },
   ORDER_ACCEPTED:      { label: 'Accepted',           v: 'info'    },
   OUT_FOR_DELIVERY:    { label: 'Out for Delivery',   v: 'info'    },
+  PENDING_CONFIRMATION:{ label: 'Pending Confirm',    v: 'warning' },
+  DELIVERY_DISPUTED:   { label: 'Disputed',           v: 'error'   },
   DELIVERED:           { label: 'Delivered',          v: 'success' },
   CANCELLED:           { label: 'Cancelled',          v: 'error'   },
 };
@@ -85,6 +87,16 @@ export default function Orders() {
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [orders, location.state, location.pathname, navigate]);
+
+  // Keep selectedOrder in sync with live updates from the database
+  useEffect(() => {
+    if (selectedOrder) {
+      const match = orders.find((o) => o.id === selectedOrder.id);
+      if (match && JSON.stringify(match) !== JSON.stringify(selectedOrder)) {
+        setSelectedOrder(match);
+      }
+    }
+  }, [orders]);
 
   const handleOrderClick = (order) => {
     setSelectedOrder(order);
