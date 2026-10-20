@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Search } from 'lucide-react';
+import { ShoppingCart, Search, Lock } from 'lucide-react';
 import { db } from '../config/firebase';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import Card from '../components/ui/Card';
@@ -206,7 +206,14 @@ export default function Orders() {
                       </td>
                       <td className="px-6 py-4 text-neutral-500">{(o.items || o.cartItems || []).length} items</td>
                       <td className="px-6 py-4 font-semibold text-primary-900">₹{Math.round(o.total || 0)}</td>
-                      <td className="px-6 py-4"><Badge variant={s.v}>{s.label}</Badge></td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant={s.v}>{s.label}</Badge>
+                          {['DELIVERED', 'CANCELLED'].includes(o.status) && (
+                            <Lock size={12} className="text-neutral-400" title="Closed • View Only" />
+                          )}
+                        </div>
+                      </td>
                       <td className="px-6 py-4 text-neutral-400 text-xs">{timeAgo(o.createdAt)}</td>
                     </tr>
                   );
@@ -220,7 +227,7 @@ export default function Orders() {
       <Modal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
-        title="Order Details"
+        title={['DELIVERED', 'CANCELLED'].includes(selectedOrder?.status) ? "Order Details (Closed • View Only)" : "Order Details"}
         size="lg"
       >
         <OrderDetailsModal 

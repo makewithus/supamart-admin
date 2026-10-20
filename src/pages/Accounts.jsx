@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Wallet, Search } from 'lucide-react';
+import { Wallet, Search, Lock } from 'lucide-react';
 import { db } from '../config/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import Card from '../components/ui/Card';
@@ -51,6 +51,17 @@ export default function Accounts() {
     return () => unsub();
   }, []);
 
+  // Keep selectedOrder in sync with live updates from the database so payment transitions
+  // immediately update the modal view without requiring a manual reopen.
+  useEffect(() => {
+    if (selectedOrder) {
+      const match = orders.find((o) => o.id === selectedOrder.id);
+      if (match && JSON.stringify(match) !== JSON.stringify(selectedOrder)) {
+        setSelectedOrder(match);
+      }
+    }
+  }, [orders]);
+
   // Accounts is the manual-UPI payment ledger — COD is discontinued, so every payable
   // order goes through this queue at some point (PENDING -> AWAITING_CONFIRMATION -> PAID/FAILED).
   const upiOrders = orders.filter((o) => o.paymentMethod === 'UPI_MANUAL');
@@ -73,11 +84,11 @@ export default function Accounts() {
     setIsModalOpen(true);
   };
 
-  // Only an AWAITING_CONFIRMATION order can actually be verified/rejected right now — for
-  // everything else (already Paid/Failed, or still Pending with no claim yet) the action
-  // modal's Confirm/Reject buttons wouldn't apply, so fall back to the read-only order
-  // details view (same one Orders.jsx uses).
-  const isActionable = selectedOrder?.paymentStatus === 'AWAITING_CONFIRMATION';
+  // Only an unclosed AWAITING_CONFIRMATION order can be verified/rejected. Once the admin
+  // has clicked/marked the payment status (PAID/FAILED) or if the order is closed, it remains
+  // strictly view-only to guarantee financial transparency and operational consistency.
+  const isOrderClosed = selectedOrder?.status === 'DELIVERED' || selectedOrder?.status === 'CANCELLED';
+  const isActionable = selectedOrder?.paymentStatus === 'AWAITING_CONFIRMATION' && !isOrderClosed;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-neutral-50 min-h-screen">
@@ -133,7 +144,16 @@ export default function Accounts() {
                       onClick={() => handleRowClick(o)}
                       className="border-b border-neutral-50 hover:bg-neutral-50/80 transition-colors cursor-pointer"
                     >
-                      <td className="px-6 py-4 font-mono text-xs text-neutral-500">#{o.orderNo}</td>
+                      <td className="px-6 py-4 font-mono text-xs text-neutral-500">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>#{o.orderNo}</span>
+                          {['DELIVERED', 'CANCELLED'].includes(o.status) && (
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-neutral-200/60 text-neutral-600">
+                              Closed
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-6 py-4">
                         <p className="font-medium text-primary-900">{o.userName || '—'}</p>
                         <p className="text-xs text-neutral-400">{o.userEmail || o.userPhone || '—'}</p>
@@ -141,7 +161,14 @@ export default function Accounts() {
                       <td className="px-6 py-4 text-neutral-500">{(o.items || []).length} items</td>
                       <td className="px-6 py-4 font-semibold text-primary-900">₹{Math.round(o.total || 0)}</td>
                       <td className="px-6 py-4 text-neutral-400 text-xs">{timeAgo(o.updatedAt)}</td>
-                      <td className="px-6 py-4"><Badge variant={badge.v}>{o.paymentStatus === 'AWAITING_CONFIRMATION' ? 'Verify' : badge.label}</Badge></td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant={badge.v}>{o.paymentStatus === 'AWAITING_CONFIRMATION' && !['DELIVERED', 'CANCELLED'].includes(o.status) ? 'Verify' : badge.label}</Badge>
+                          {(o.paymentStatus !== 'AWAITING_CONFIRMATION' || ['DELIVERED', 'CANCELLED'].includes(o.status)) && (
+                            <Lock size={12} className="text-neutral-400" title="View Only" />
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -154,7 +181,7 @@ export default function Accounts() {
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title={isActionable ? 'Verify Payment' : 'Order Details'}
+        title={isActionable ? 'Verify Payment' : isOrderClosed ? 'Order Details (Closed • View Only)' : 'Order Details (Accounts • View Only)'}
         size="lg"
       >
         {isActionable ? (
@@ -166,6 +193,8 @@ export default function Accounts() {
         ) : (
           <OrderDetailsModal
             order={selectedOrder}
+            readOnly={true}
+            viewOnlyReason="This order's payment status has been recorded. In Accounts, orders remain view-only to prevent unauthorized edits and maintain transparency."
             onClose={() => setIsModalOpen(false)}
             onSuccess={() => setIsModalOpen(false)}
           />

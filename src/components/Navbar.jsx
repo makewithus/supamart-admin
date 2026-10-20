@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Package, ShoppingCart, Layers, Users, LogOut, Tag, BadgePercent, Wallet, Menu, X, Volume2, Settings as SettingsIcon
+  LayoutDashboard, Package, ShoppingCart, Layers, Users, LogOut, Tag, BadgePercent, Wallet, Menu, X, Volume2, Settings as SettingsIcon, RotateCcw, AlertCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { auth } from '../config/firebase';
@@ -13,6 +13,8 @@ const NAV = [
   { to: '/orders',     icon: ShoppingCart,    label: 'Orders'    },
   { to: '/delivery-partners', icon: Package,  label: 'Deliveries'},
   { to: '/accounts',   icon: Wallet,          label: 'Accounts'  },
+  { to: '/refunds',    icon: RotateCcw,       label: 'Refund Requests' },
+  { to: '/issues',     icon: AlertCircle,     label: 'Issues'    },
   { to: '/categories', icon: Layers,          label: 'Categories'},
   { to: '/brands',     icon: Tag,             label: 'Brands'    },
   { to: '/customers',  icon: Users,           label: 'Customers' },

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Upload, Loader2, Image as ImageIcon } from 'lucide-react';
+import { X, Upload, Loader2, Image as ImageIcon, Plus, Trash2, Layers } from 'lucide-react';
 import Button from './ui/Button';
 import Input from './ui/Input';
 import Select from './ui/Select';
@@ -52,6 +52,11 @@ export default function ProductForm({ product, categories, brands = [], onSucces
     isTrending: false,
   });
 
+  // Pack sizes & custom weight variants (e.g. 250g, 500g, 1kg, 2kg)
+  const [variantsList, setVariantsList] = useState([
+    { id: 'var-1', label: '1 kg', price: '', offerPrice: '', stock: '50' }
+  ]);
+
   const [existingImages, setExistingImages] = useState([]);
   const [newImages, setNewImages]           = useState([]);   // File objects
   const [previewUrls, setPreviewUrls]       = useState([]);
@@ -78,11 +83,47 @@ export default function ProductForm({ product, categories, brands = [], onSucces
         isFeatured:   product.isFeatured || false,
         isTrending:   product.isTrending || false,
       });
+
+      if (product.variants && product.variants.length > 0) {
+        setVariantsList(
+          product.variants.map((varItem, i) => ({
+            id: varItem.id || `var-${Date.now()}-${i}`,
+            label: varItem.label || (i === 0 ? product.unit || '1 kg' : `Pack ${i + 1}`),
+            price: varItem.price?.toString() || '',
+            offerPrice: varItem.offerPrice?.toString() || '',
+            stock: varItem.stock?.toString() || '50',
+          }))
+        );
+      }
       setExistingImages(product.images || []);
     } else if (categories.length > 0) {
       setFormData(prev => ({ ...prev, categoryId: categories[0].id }));
     }
   }, [product, categories]);
+
+  const handleAddPresetVariant = (label) => {
+    setVariantsList(prev => [
+      ...prev,
+      {
+        id: `var-${Date.now()}-${prev.length + 1}`,
+        label,
+        // Each pack needs an explicitly entered admin price; do not infer prices
+        // or discounts by multiplying another pack's values.
+        price: '',
+        offerPrice: '',
+        stock: formData.stock || '50',
+      }
+    ]);
+  };
+
+  const handleUpdateVariant = (index, field, value) => {
+    setVariantsList(prev => prev.map((item, i) => i === index ? { ...item, [field]: value } : item));
+  };
+
+  const handleRemoveVariant = (index) => {
+    if (variantsList.length <= 1) return toast.error('A product must have at least one pack size/variant');
+    setVariantsList(prev => prev.filter((_, i) => i !== index));
+  };
 
   const handleImageChange = (e) => {
     const files = Array.from(e.target.files);
@@ -124,6 +165,30 @@ export default function ProductForm({ product, categories, brands = [], onSucces
     if (Number(formData.price) <= 0) return toast.error('Price must be greater than 0');
     if (Number(formData.stock) < 0)  return toast.error('Stock cannot be negative');
 
+    // Validate variants
+    if (variantsList.length > 0) {
+      const labelsSeen = new Set();
+      for (let i = 0; i < variantsList.length; i++) {
+        const v = variantsList[i];
+        const trimmedLabel = (v.label || '').trim().toLowerCase();
+        if (!trimmedLabel) {
+          return toast.error(`Please provide a label/size for variant #${i + 1}`);
+        }
+        if (labelsSeen.has(trimmedLabel)) {
+          return toast.error(`Duplicate variant label "${v.label}". Each pack size must be unique.`);
+        }
+        labelsSeen.add(trimmedLabel);
+
+        const vPrice = Number(v.price);
+        if (vPrice <= 0) {
+          return toast.error(`Price for variant "${v.label}" must be greater than 0`);
+        }
+        if (v.offerPrice && Number(v.offerPrice) > vPrice) {
+          return toast.error(`Offer price cannot exceed standard price for "${v.label}"`);
+        }
+      }
+    }
+
     setLoading(true);
     setUploadProgress(0);
     setUploadStatus('');
@@ -142,15 +207,49 @@ export default function ProductForm({ product, categories, brands = [], onSucces
       const keptImageUrls = existingImages.map(img => (typeof img === 'string' ? img : img.url || img));
       const allImages = [...keptImageUrls, ...newUrls];
 
-      // 3. Build the variant
-      const variant = {
-        id:         formData.sku || `VAR-${Date.now()}`,
-        price:      Number(formData.price),
-        offerPrice: formData.offerPrice ? Number(formData.offerPrice) : null,
-        stock:      Number(formData.stock),
-        sku:        formData.sku || null,
-        label:      'Default',
-      };
+      // 3. Build variants from variantsList
+      let builtVariants = [];
+      if (variantsList.length > 0) {
+        builtVariants = variantsList.map((v, idx) => {
+          const mrpVal = Number(v.price) > 0 ? Number(v.price) : Number(formData.price);
+          const sellVal = v.offerPrice && Number(v.offerPrice) > 0 ? Number(v.offerPrice) : null;
+          const discountPct = (mrpVal && sellVal && sellVal < mrpVal)
+            ? Math.round(((mrpVal - sellVal) / mrpVal) * 100)
+            : 0;
+
+          return {
+            id:              v.id || `VAR-${Date.now()}-${idx}`,
+            label:           (v.label || '').trim() || (idx === 0 ? formData.unit || '1 kg' : `Pack ${idx + 1}`),
+            price:           mrpVal,
+            offerPrice:      sellVal,
+            mrp:             mrpVal,
+            sellingPrice:    sellVal ?? mrpVal,
+            discountPercent: discountPct,
+            stock:           Number(v.stock) >= 0 ? Number(v.stock) : (Number(formData.stock) || 50),
+            sku:             formData.sku || null,
+          };
+        });
+      } else {
+        const baseMrp = Number(formData.price);
+        const baseOffer = formData.offerPrice ? Number(formData.offerPrice) : null;
+        const discountPct = (baseMrp && baseOffer && baseOffer < baseMrp)
+          ? Math.round(((baseMrp - baseOffer) / baseMrp) * 100)
+          : 0;
+
+        builtVariants = [
+          {
+            id:              formData.sku || `VAR-${Date.now()}`,
+            price:           baseMrp,
+            offerPrice:      baseOffer,
+            mrp:             baseMrp,
+            sellingPrice:    baseOffer ?? baseMrp,
+            discountPercent: discountPct,
+            stock:           Number(formData.stock),
+            sku:             formData.sku || null,
+            label:           formData.unit || 'Default',
+          },
+        ];
+      }
 
       const tags = formData.tags.split(',').map(t => t.trim()).filter(Boolean);
 
@@ -166,9 +265,13 @@ export default function ProductForm({ product, categories, brands = [], onSucces
         isFeatured:   formData.isFeatured,
         isTrending:   formData.isTrending,
         tags,
-        variants:     [variant],
-        images:       allImages,
+        variants:     builtVariants,
       };
+
+      // A bundled fallback photo is not a remote URL, so an empty list here means
+      // the editor has no image change to save. Omitting it keeps legacy products
+      // editable without clearing their server-side image field.
+      if (allImages.length > 0 || !isEdit) payload.images = allImages;
 
       if (isEdit) {
         await apiPut(`/products/${product.id}`, payload);
@@ -266,6 +369,134 @@ export default function ProductForm({ product, categories, brands = [], onSucces
           <label className="block text-xs font-semibold text-neutral-500 mb-1">Weight (kg)</label>
           <input type="number" min="0" step="0.01" className={inputClass} value={formData.weight}
             onChange={e => setFormData({ ...formData, weight: e.target.value })} />
+        </div>
+      </div>
+
+      {/* Pack Sizes & Weight Variants Card */}
+      <div className="bg-neutral-50/80 border border-neutral-200 rounded-xl p-4 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <Layers size={18} className="text-primary-900" />
+              <h4 className="text-sm font-bold text-neutral-800">
+                Pack Sizes & Weight Variants
+              </h4>
+            </div>
+            <p className="text-xs text-neutral-500 mt-0.5">
+              Configure custom prices for different grams / weights (e.g. 250g, 500g, 1kg, 2kg).
+            </p>
+          </div>
+
+          {/* Quick preset buttons */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-semibold text-neutral-400 mr-1">Quick Add:</span>
+            {[
+              { label: '250 g', mult: 0.28 },
+              { label: '500 g', mult: 0.54 },
+              { label: '1 kg', mult: 1 },
+              { label: '2 kg', mult: 1.95 },
+              { label: '5 kg', mult: 4.8 },
+            ].map(p => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => handleAddPresetVariant(p.label, p.mult)}
+                className="px-2.5 py-1 text-xs font-semibold bg-white border border-neutral-200 rounded-md text-neutral-700 hover:border-primary-900 hover:text-primary-900 hover:bg-primary-50 transition-colors"
+              >
+                + {p.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => handleAddPresetVariant(`Pack ${variantsList.length + 1}`, 1)}
+              className="px-2.5 py-1 text-xs font-bold bg-primary-900 text-white rounded-md hover:bg-primary-800 transition-colors flex items-center gap-1"
+            >
+              <Plus size={12} /> Custom
+            </button>
+          </div>
+        </div>
+
+        {/* Variants List Items */}
+        <div className="space-y-2.5">
+          {variantsList.map((v, idx) => (
+            <div
+              key={v.id || idx}
+              className="bg-white p-3 rounded-lg border border-neutral-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center gap-3"
+            >
+              <div className="flex-1">
+                <label className="block text-[11px] font-semibold text-neutral-500 mb-1">
+                  Pack Size / Weight
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 500 g, 1 kg"
+                  className={inputClass}
+                  value={v.label}
+                  onChange={e => handleUpdateVariant(idx, 'label', e.target.value)}
+                />
+              </div>
+
+              <div className="w-full md:w-32">
+                <label className="block text-[11px] font-semibold text-neutral-500 mb-1">
+                  Price (₹) *
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="MRP"
+                  className={inputClass}
+                  value={v.price}
+                  onChange={e => handleUpdateVariant(idx, 'price', e.target.value)}
+                />
+              </div>
+
+              <div className="w-full md:w-32">
+                <label className="block text-[11px] font-semibold text-neutral-500 mb-1">
+                  Offer Price (₹)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Optional"
+                  className={inputClass}
+                  value={v.offerPrice}
+                  onChange={e => handleUpdateVariant(idx, 'offerPrice', e.target.value)}
+                />
+              </div>
+
+              <div className="w-full md:w-28">
+                <label className="block text-[11px] font-semibold text-neutral-500 mb-1">
+                  Stock
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Qty"
+                  className={inputClass}
+                  value={v.stock}
+                  onChange={e => handleUpdateVariant(idx, 'stock', e.target.value)}
+                />
+              </div>
+
+              <div className="flex items-center justify-end pt-5">
+                <button
+                  type="button"
+                  onClick={() => handleRemoveVariant(idx)}
+                  disabled={variantsList.length <= 1}
+                  title={variantsList.length <= 1 ? "At least one variant required" : "Remove variant"}
+                  className={`p-2 rounded-md transition-colors ${
+                    variantsList.length <= 1
+                      ? 'text-neutral-300 cursor-not-allowed'
+                      : 'text-red-500 hover:bg-red-50 hover:text-red-700'
+                  }`}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

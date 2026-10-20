@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, User, MapPin, Package, Clock } from 'lucide-react';
+import { Loader2, User, MapPin, Package, Clock, Star, Lock, Truck, ShieldCheck, CheckCircle2, XCircle } from 'lucide-react';
 import Button from './ui/Button';
 import Badge from './ui/Badge';
 import Select from './ui/Select';
@@ -70,7 +70,7 @@ function getStatusOptions(order) {
   return { options, note };
 }
 
-export default function OrderDetailsModal({ order, onClose, onSuccess }) {
+export default function OrderDetailsModal({ order, onClose, onSuccess, readOnly = false, viewOnlyReason = null }) {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(order?.status || 'ORDER_PLACED');
   const [partnerId, setPartnerId] = useState(order?.assignedPartnerId || '');
@@ -102,6 +102,7 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
     try {
       await apiPatch(`/orders/${order.id}/status`, { status });
       toast.success('Order status updated');
+      if (onSuccess) onSuccess();
     } catch (e) {
       toast.error(e.message || 'Failed to update status');
     } finally {
@@ -115,6 +116,7 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
     try {
       await apiPatch(`/orders/${order.id}/assign`, { partnerId });
       toast.success('Delivery partner assigned');
+      if (onSuccess) onSuccess();
     } catch (e) {
       toast.error(e.message || 'Failed to assign partner');
     } finally {
@@ -124,10 +126,49 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
 
   if (!order) return null;
 
+  const isClosed = TERMINAL_STATUSES.includes(order.status);
+  const isReadOnly = readOnly || isClosed;
   const { options: statusOptions, note: statusNote } = getStatusOptions(order);
+  const assignedPartner = partners.find(p => p.id === (order.assignedPartnerId || partnerId));
 
   return (
     <div className="space-y-6">
+      {/* View-Only / Closed Order Status Banner */}
+      {isReadOnly && (
+        <div className={`p-4 rounded-2xl border flex items-start gap-3.5 transition-all ${
+          isClosed
+            ? order.status === 'DELIVERED'
+              ? 'bg-emerald-50/70 border-emerald-200/80 text-emerald-950'
+              : 'bg-rose-50/70 border-rose-200/80 text-rose-950'
+            : 'bg-amber-50/70 border-amber-200/80 text-amber-950'
+        }`}>
+          <div className={`p-2.5 rounded-xl shrink-0 ${
+            isClosed
+              ? order.status === 'DELIVERED'
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-rose-100 text-rose-700'
+              : 'bg-amber-100 text-amber-700'
+          }`}>
+            <Lock size={18} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-sm">
+                {isClosed ? 'Order Closed & Finalized' : 'Accounts Ledger Record'}
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/90 border border-neutral-200/80 text-neutral-700 shadow-xs">
+                View Only
+              </span>
+            </div>
+            <p className="text-xs mt-1 leading-relaxed opacity-90">
+              {isClosed
+                ? `This order was closed as ${STATUS_LABELS[order.status] || order.status}. For strict audit transparency and operational consistency, closed orders cannot be reopened or edited.`
+                : (viewOnlyReason || "Payment verification has been processed for this order. It remains view-only in Accounts to ensure financial audit integrity.")}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Basic Info */}
       <div className="grid grid-cols-2 gap-4 bg-neutral-50 p-4 rounded-2xl border border-neutral-100">
         <div>
@@ -221,64 +262,115 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="space-y-4 pt-4 border-t border-neutral-100">
-        <div className="flex items-end gap-3">
-          <div className="flex-1">
-            <label className="block text-xs font-semibold text-neutral-500 mb-1">Update Status</label>
-            <Select
-              value={status}
-              onChange={setStatus}
-              disabled={statusOptions.length <= 1}
-              options={statusOptions.map((s) => ({
-                value: s,
-                label: `${STATUS_LABELS[s] || s}${s === order.status ? ' (current)' : ''}`,
-              }))}
-            />
-            {statusNote && <p className="text-xs text-amber-600 font-medium mt-1.5">{statusNote}</p>}
-          </div>
-          <Button variant="primary" onClick={handleUpdateStatus} disabled={loading || status === order.status}>
-            {loading ? <Loader2 size={16} className="animate-spin" /> : 'Update Status'}
-          </Button>
-        </div>
-
-        {/* Delivery Partner */}
-        <div className="flex items-end gap-3">
-          <div className="flex-1">
-            <label className="block text-xs font-semibold text-neutral-500 mb-1">Delivery Partner</label>
-            <Select
-              value={partnerId}
-              onChange={setPartnerId}
-              disabled={TERMINAL_STATUSES.includes(order.status)}
-              options={[
-                { value: '', label: 'Unassigned' },
-                ...partners.map(p => ({ value: p.id, label: `${p.name} (${p.mobile || p.phone || ''})` }))
-              ]}
-            />
-          </div>
-          <Button 
-            variant="primary" 
-            onClick={handleAssignPartner}
-            disabled={loading || partnerId === (order.assignedPartnerId || '') || TERMINAL_STATUSES.includes(order.status)}
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Assign Partner'}
-          </Button>
-        </div>
-
-        {/* Delivery Rating */}
-        {order.deliveryRating && (
-          <div className="flex items-start gap-3 pt-2 border-t border-neutral-100">
-            <span className="text-xl">⭐</span>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-gray-900">Delivery Rating</div>
-              <div className="text-sm text-gray-500 mt-1">
-                <span className="font-bold text-yellow-500">{order.deliveryRating} / 5</span>
-                {order.deliveryReview && ` - "${order.deliveryReview}"`}
+      {/* Actions / Fulfillment Status */}
+      {isReadOnly ? (
+        <div className="space-y-4 pt-4 border-t border-neutral-100">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-100 space-y-2">
+              <p className="text-xs text-neutral-500 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                <Package size={14} className="text-neutral-400" /> Current Order Status
+              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant={
+                  order.status === 'DELIVERED' ? 'success'
+                    : order.status === 'CANCELLED' ? 'error'
+                    : order.status === 'ORDER_PLACED' ? 'warning'
+                    : 'info'
+                }>
+                  {STATUS_LABELS[order.status] || order.status}
+                </Badge>
+                <span className="text-xs text-neutral-400 font-medium">
+                  {isClosed ? '(Closed & Immutable)' : '(Managed in Orders queue)'}
+                </span>
               </div>
             </div>
+
+            <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-100 space-y-2">
+              <p className="text-xs text-neutral-500 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                <Truck size={14} className="text-neutral-400" /> Delivery Partner
+              </p>
+              <p className="text-sm font-medium text-primary-900">
+                {assignedPartner ? `${assignedPartner.name} (${assignedPartner.mobile || assignedPartner.phone || ''})` : (order.assignedPartnerId ? 'Assigned' : 'Unassigned')}
+              </p>
+              <span className="text-xs text-neutral-400 font-medium block">
+                {isClosed ? 'Partner assignment is finalized' : 'Partner details'}
+              </span>
+            </div>
           </div>
-        )}
-      </div>
+
+          {/* Delivery Rating */}
+          {order.deliveryRating && (
+            <div className="flex items-start gap-3 p-3.5 bg-neutral-50 rounded-2xl border border-neutral-100">
+              <Star className="w-5 h-5 text-amber-500 fill-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="text-sm font-semibold text-gray-900">Delivery Rating</div>
+                <div className="text-sm text-gray-600 mt-0.5">
+                  <span className="font-bold text-amber-600">{order.deliveryRating} / 5</span>
+                  {order.deliveryReview && ` — "${order.deliveryReview}"`}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-4 pt-4 border-t border-neutral-100">
+          <div className="flex items-end gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-neutral-500 mb-1">Update Status</label>
+              <Select
+                value={status}
+                onChange={setStatus}
+                disabled={statusOptions.length <= 1}
+                options={statusOptions.map((s) => ({
+                  value: s,
+                  label: `${STATUS_LABELS[s] || s}${s === order.status ? ' (current)' : ''}`,
+                }))}
+              />
+              {statusNote && <p className="text-xs text-amber-600 font-medium mt-1.5">{statusNote}</p>}
+            </div>
+            <Button variant="primary" onClick={handleUpdateStatus} disabled={loading || status === order.status}>
+              {loading ? <Loader2 size={16} className="animate-spin" /> : 'Update Status'}
+            </Button>
+          </div>
+
+          {/* Delivery Partner */}
+          <div className="flex items-end gap-3">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold text-neutral-500 mb-1">Delivery Partner</label>
+              <Select
+                value={partnerId}
+                onChange={setPartnerId}
+                disabled={TERMINAL_STATUSES.includes(order.status)}
+                options={[
+                  { value: '', label: 'Unassigned' },
+                  ...partners.map(p => ({ value: p.id, label: `${p.name} (${p.mobile || p.phone || ''})` }))
+                ]}
+              />
+            </div>
+            <Button 
+              variant="primary" 
+              onClick={handleAssignPartner}
+              disabled={loading || partnerId === (order.assignedPartnerId || '') || TERMINAL_STATUSES.includes(order.status)}
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Assign Partner'}
+            </Button>
+          </div>
+
+          {/* Delivery Rating */}
+          {order.deliveryRating && (
+            <div className="flex items-start gap-3 pt-2 border-t border-neutral-100">
+              <Star className="w-5 h-5 text-amber-500 fill-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="text-sm font-medium text-gray-900">Delivery Rating</div>
+                <div className="text-sm text-gray-500 mt-1">
+                  <span className="font-bold text-yellow-500">{order.deliveryRating} / 5</span>
+                  {order.deliveryReview && ` - "${order.deliveryReview}"`}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex justify-end pt-4">
         <Button variant="ghost" onClick={onClose}>Close</Button>

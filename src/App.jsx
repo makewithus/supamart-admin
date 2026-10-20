@@ -42,6 +42,8 @@ const Brands           = lazy(() => import('./pages/Brands'));
 const Customers        = lazy(() => import('./pages/Customers'));
 const Offers           = lazy(() => import('./pages/Offers'));
 const Settings         = lazy(() => import('./pages/Settings'));
+const RefundRequests   = lazy(() => import('./pages/RefundRequests'));
+const Issues           = lazy(() => import('./pages/Issues'));
 
 function PageFallback() {
   return (
@@ -97,6 +99,8 @@ function AppShell() {
             <Route path="/orders"             element={<Orders />}    />
             <Route path="/delivery-partners"  element={<DeliveryPartners />} />
             <Route path="/accounts"           element={<Accounts />}  />
+            <Route path="/refunds"            element={<RefundRequests />} />
+            <Route path="/issues"             element={<Issues />} />
             <Route path="/categories"         element={<Categories />}/>
             <Route path="/brands"             element={<Brands />}    />
             <Route path="/customers"          element={<Customers />} />
@@ -285,7 +289,7 @@ export default function App() {
             fontSize: '13px',
             fontWeight: '500',
             boxShadow: '0 4px 24px rgba(0,0,0,0.22)',
-            fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif',
+            fontFamily: '"Inter", system-ui, sans-serif',
             maxWidth: '360px',
           },
           success: {

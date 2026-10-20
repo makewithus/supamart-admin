@@ -248,6 +248,8 @@ const productImages = {
   "Santoor Soap (White/Set)": "/product-images/Santoor%20Soap%20White%20Set.webp",
   "Sara Soap Podi (washing powder)": "/product-images/Sara%20Soap%20Podi%20washing%20powder.webp",
   "Sarkara (Jaggery)": "/product-images/Sarkara%20Jaggery.webp",
+  "Refined Sugar": "/product-images/Refined%20Sugar.webp",
+  "Iodized Crystal Salt": "/product-images/Iodized%20Crystal%20Salt.webp",
   "Sensodyne Fresh Gel Paste": "/product-images/Sensodyne%20Fresh%20Gel%20Paste.webp",
   "Sensodyne Rapid Relief Paste": "/product-images/Sensodyne%20Rapid%20Relief%20Paste.webp",
   "Sensodyne Sensitive Toothbrush": "/product-images/Sensodyne%20Sensitive%20Toothbrush.webp",

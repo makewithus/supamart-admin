@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Loader2, User, Package, CheckCircle2, XCircle } from 'lucide-react';
+import { Loader2, User, Package, CheckCircle2, XCircle, Lock } from 'lucide-react';
 import Button from './ui/Button';
 import Badge from './ui/Badge';
 import toast from 'react-hot-toast';
@@ -20,12 +20,16 @@ export default function PaymentVerificationModal({ order, onClose, onSuccess }) 
 
   if (!order) return null;
 
+  const isClosed = order.status === 'DELIVERED' || order.status === 'CANCELLED';
+  const isAlreadyProcessed = order.paymentStatus === 'PAID' || order.paymentStatus === 'FAILED';
+
   const handleConfirm = async () => {
+    if (loading || isClosed || isAlreadyProcessed) return;
     setLoading(true);
     try {
       await apiPatch(`/orders/${order.id}/mark-paid`);
       toast.success('Payment confirmed — order approved');
-      onSuccess();
+      if (onSuccess) onSuccess();
     } catch (e) {
       toast.error(e.message || 'Failed to confirm payment');
     } finally {
@@ -34,6 +38,7 @@ export default function PaymentVerificationModal({ order, onClose, onSuccess }) 
   };
 
   const handleReject = async () => {
+    if (loading || isClosed || isAlreadyProcessed) return;
     if (reason === 'OTHER' && !customReason.trim()) {
       toast.error('Please describe the reason for rejection');
       return;
@@ -42,7 +47,7 @@ export default function PaymentVerificationModal({ order, onClose, onSuccess }) 
     try {
       await apiPatch(`/orders/${order.id}/reject-payment`, { reason, customReason: customReason.trim() });
       toast.success('Payment rejected — order cancelled');
-      onSuccess();
+      if (onSuccess) onSuccess();
     } catch (e) {
       toast.error(e.message || 'Failed to reject payment');
     } finally {
@@ -124,55 +129,78 @@ export default function PaymentVerificationModal({ order, onClose, onSuccess }) 
         </div>
       </div>
 
-      {/* Verification actions */}
+      {/* Verification actions / Locked State */}
       <div className="space-y-4 pt-4 border-t border-neutral-100">
-        <p className="text-xs text-neutral-500 font-medium leading-5">
-          Check your bank/UPI app for a credit matching this exact amount before confirming.
-        </p>
-
-        {!showReject ? (
-          <div className="flex gap-3">
-            <Button variant="primary" className="flex-1 !bg-secondary-600 hover:!bg-secondary-700 focus:!ring-secondary-600" onClick={handleConfirm} disabled={loading}>
-              {loading ? <Loader2 size={16} className="animate-spin" /> : <><CheckCircle2 size={16} /> Confirm Payment Received</>}
-            </Button>
-            <Button variant="destructive" className="flex-1" onClick={() => setShowReject(true)} disabled={loading}>
-              <XCircle size={16} /> Reject Payment
-            </Button>
+        {isClosed || isAlreadyProcessed ? (
+          <div className="p-4 rounded-2xl border bg-neutral-50 border-neutral-200 flex items-start gap-3">
+            <div className="p-2.5 rounded-xl bg-neutral-100 text-neutral-600 shrink-0">
+              <Lock size={18} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="font-bold text-sm text-primary-900">Payment Status Finalized</p>
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-neutral-200/70 text-neutral-700">
+                  View Only
+                </span>
+              </div>
+              <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
+                {isClosed
+                  ? `This order is closed (${order.status}). For transparency and financial consistency, payment status cannot be altered.`
+                  : `This order's payment status is already marked as ${order.paymentStatus}. It cannot be reopened or edited.`}
+              </p>
+            </div>
           </div>
         ) : (
-          <div className="space-y-3 bg-red-50/50 border border-red-100 rounded-2xl p-4">
-            <label className="block text-xs font-semibold text-neutral-600">Why is this payment being rejected?</label>
-            <div className="space-y-2">
-              {REJECT_REASONS.map((r) => (
-                <label key={r.value} className="flex items-center gap-2 text-sm text-neutral-700 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="rejectReason"
-                    value={r.value}
-                    checked={reason === r.value}
-                    onChange={() => setReason(r.value)}
-                    className="accent-red-500"
+          <>
+            <p className="text-xs text-neutral-500 font-medium leading-5">
+              Check your bank/UPI app for a credit matching this exact amount before confirming.
+            </p>
+
+            {!showReject ? (
+              <div className="flex gap-3">
+                <Button variant="primary" className="flex-1 !bg-secondary-600 hover:!bg-secondary-700 focus:!ring-secondary-600" onClick={handleConfirm} disabled={loading}>
+                  {loading ? <Loader2 size={16} className="animate-spin" /> : <><CheckCircle2 size={16} /> Confirm Payment Received</>}
+                </Button>
+                <Button variant="destructive" className="flex-1" onClick={() => setShowReject(true)} disabled={loading}>
+                  <XCircle size={16} /> Reject Payment
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3 bg-red-50/50 border border-red-100 rounded-2xl p-4">
+                <label className="block text-xs font-semibold text-neutral-600">Why is this payment being rejected?</label>
+                <div className="space-y-2">
+                  {REJECT_REASONS.map((r) => (
+                    <label key={r.value} className="flex items-center gap-2 text-sm text-neutral-700 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="rejectReason"
+                        value={r.value}
+                        checked={reason === r.value}
+                        onChange={() => setReason(r.value)}
+                        className="accent-red-500"
+                      />
+                      {r.label}
+                    </label>
+                  ))}
+                </div>
+                {reason === 'OTHER' && (
+                  <textarea
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-neutral-200 text-sm focus:outline-none focus:border-red-400"
+                    rows={2}
+                    placeholder="Describe the reason…"
+                    value={customReason}
+                    onChange={(e) => setCustomReason(e.target.value)}
                   />
-                  {r.label}
-                </label>
-              ))}
-            </div>
-            {reason === 'OTHER' && (
-              <textarea
-                className="w-full px-3 py-2 rounded-xl bg-white border border-neutral-200 text-sm focus:outline-none focus:border-red-400"
-                rows={2}
-                placeholder="Describe the reason…"
-                value={customReason}
-                onChange={(e) => setCustomReason(e.target.value)}
-              />
+                )}
+                <div className="flex gap-3 pt-1">
+                  <Button variant="ghost" className="flex-1" onClick={() => setShowReject(false)} disabled={loading}>Cancel</Button>
+                  <Button variant="destructive" className="flex-1" onClick={handleReject} disabled={loading}>
+                    {loading ? <Loader2 size={16} className="animate-spin" /> : 'Confirm Rejection'}
+                  </Button>
+                </div>
+              </div>
             )}
-            <div className="flex gap-3 pt-1">
-              <Button variant="ghost" className="flex-1" onClick={() => setShowReject(false)} disabled={loading}>Cancel</Button>
-              <Button variant="destructive" className="flex-1" onClick={handleReject} disabled={loading}>
-                {loading ? <Loader2 size={16} className="animate-spin" /> : 'Confirm Rejection'}
-              </Button>
-            </div>
-          </div>
+          </>
         )}
       </div>
 
