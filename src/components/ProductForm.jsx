@@ -50,6 +50,8 @@ export default function ProductForm({ product, categories, brands = [], onSucces
     availability: 'AVAILABLE',
     isFeatured: false,
     isTrending: false,
+    isBestseller: false,
+    isMonthlyStockUp: false,
   });
 
   // Pack sizes & custom weight variants (e.g. 250g, 500g, 1kg, 2kg)
@@ -82,6 +84,8 @@ export default function ProductForm({ product, categories, brands = [], onSucces
         availability: product.availability || 'AVAILABLE',
         isFeatured:   product.isFeatured || false,
         isTrending:   product.isTrending || false,
+        isBestseller: product.isBestseller || false,
+        isMonthlyStockUp: product.isMonthlyStockUp || false,
       });
 
       if (product.variants && product.variants.length > 0) {
@@ -264,6 +268,8 @@ export default function ProductForm({ product, categories, brands = [], onSucces
         availability: formData.availability,
         isFeatured:   formData.isFeatured,
         isTrending:   formData.isTrending,
+        isBestseller: formData.isBestseller,
+        isMonthlyStockUp: formData.isMonthlyStockUp,
         tags,
         variants:     builtVariants,
       };
@@ -520,6 +526,7 @@ export default function ProductForm({ product, categories, brands = [], onSucces
         {[
           { key: 'isFeatured', label: 'Featured' },
           { key: 'isTrending', label: 'Trending' },
+          { key: 'isBestseller', label: 'Bestseller' },
         ].map(({ key, label }) => (
           <div key={key} className="flex items-center gap-2.5">
             <button
@@ -536,6 +543,15 @@ export default function ProductForm({ product, categories, brands = [], onSucces
             <span className="text-sm font-medium text-neutral-700">{label}</span>
           </div>
         ))}
+        <label className="flex items-center gap-2.5 text-sm font-medium text-neutral-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={formData.isMonthlyStockUp}
+            onChange={(event) => setFormData((previous) => ({ ...previous, isMonthlyStockUp: event.target.checked }))}
+            className="h-4 w-4 rounded border-neutral-300 text-primary-900 focus:ring-primary-900"
+          />
+          Monthly stock-up
+        </label>
       </div>
 
       <div>

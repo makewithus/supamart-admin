@@ -33,6 +33,7 @@ export default function Products() {
   const [brandFilter, setBrandFilter] = useState('ALL');
   const [availFilter, setAvailFilter] = useState('ALL');
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [bestsellerOnly, setBestsellerOnly] = useState(false);
   const [loading, setLoading]   = useState(true);
   const [page, setPage]         = useState(1);
   const PAGE_SIZE = 25;
@@ -110,14 +111,15 @@ export default function Products() {
       if (brandFilter !== 'ALL' && p.brandId !== brandFilter) return false;
       if (availFilter !== 'ALL' && p.availability !== availFilter) return false;
       if (lowStockOnly && stockOf(p) > 10) return false;
+      if (bestsellerOnly && !p.isBestseller) return false;
       return true;
     }),
-    [products, search, categoryFilter, brandFilter, availFilter, lowStockOnly]
+    [products, search, categoryFilter, brandFilter, availFilter, lowStockOnly, bestsellerOnly]
   );
 
-  const hasActiveFilters = search !== '' || categoryFilter !== 'ALL' || brandFilter !== 'ALL' || availFilter !== 'ALL' || lowStockOnly;
+  const hasActiveFilters = search !== '' || categoryFilter !== 'ALL' || brandFilter !== 'ALL' || availFilter !== 'ALL' || lowStockOnly || bestsellerOnly;
   const clearFilters = () => {
-    setSearch(''); setCategoryFilter('ALL'); setBrandFilter('ALL'); setAvailFilter('ALL'); setLowStockOnly(false);
+    setSearch(''); setCategoryFilter('ALL'); setBrandFilter('ALL'); setAvailFilter('ALL'); setLowStockOnly(false); setBestsellerOnly(false);
   };
 
   // Client-side pagination — keeps the DOM (and the number of image requests)
@@ -130,7 +132,7 @@ export default function Products() {
   );
 
   // Any change to the result set resets to page 1.
-  useEffect(() => { setPage(1); }, [search, categoryFilter, brandFilter, availFilter, lowStockOnly]);
+  useEffect(() => { setPage(1); }, [search, categoryFilter, brandFilter, availFilter, lowStockOnly, bestsellerOnly]);
 
   const minPrice = (p) => {
     const prices = (p.variants || []).map((v) => v.offerPrice ?? v.price).filter(Boolean);
