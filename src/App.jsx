@@ -1,3 +1,4 @@
+import BrandMark from './components/BrandMark';
 import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Zap, ShieldOff } from 'lucide-react';
@@ -79,9 +80,9 @@ function AppShell() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-neutral-50 overflow-hidden">
+    <div className="flex flex-col md:flex-row h-dvh bg-neutral-50 overflow-hidden">
       <Navbar />
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 min-w-0 min-h-0 overflow-auto">
         {orderAlert ? (
           <NewOrderBanner order={orderAlert} onView={handleViewOrder} onDismiss={() => setOrderAlert(null)} />
         ) : (
@@ -245,8 +246,8 @@ export default function App() {
     return (
       <div className="flex h-screen items-center justify-center bg-neutral-50">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-24 h-24 flex items-center justify-center animate-pulse">
-            <img src="/logo.png" alt="Loading" className="w-full h-full object-contain" />
+          <div className="flex items-center justify-center">
+            <BrandMark />
           </div>
           <p className="text-sm text-neutral-400 font-medium">Loading MS Traders…</p>
         </div>
@@ -289,7 +290,7 @@ export default function App() {
             fontSize: '13px',
             fontWeight: '500',
             boxShadow: '0 4px 24px rgba(0,0,0,0.22)',
-            fontFamily: '"Inter", system-ui, sans-serif',
+            fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif',
             maxWidth: '360px',
           },
           success: {

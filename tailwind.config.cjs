@@ -23,6 +23,7 @@ module.exports = {
         'fade-in': 'fadeIn 0.25s ease both',
       },
       colors: {
+        brand: { green: '#0A7C47', amber: '#FFB020', ink: '#121712', shelf: '#F3F5F2' },
         primary: {
           50:  '#f7f7f7',
           100: '#eeeeee',
@@ -33,8 +34,8 @@ module.exports = {
           600: '#555555',
           700: '#3c3c3c',
           800: '#252525',
-          900: '#121212',
-          DEFAULT: '#121212',
+          900: '#121712',
+          DEFAULT: '#121712',
         },
         secondary: {
           50:  '#f2faf2',
@@ -63,7 +64,7 @@ module.exports = {
           DEFAULT: '#D2E5F5',
         },
         neutral: {
-          50:  '#F8F8F8',
+          50:  '#F3F5F2',
           100: '#f0f0f0',
           200: '#e8e8e8',
           300: '#d4d4d4',
@@ -72,12 +73,12 @@ module.exports = {
           600: '#6a6a6a',
           700: '#4a4a4a',
           800: '#2c2c2c',
-          900: '#121212',
-          DEFAULT: '#F8F8F8',
+          900: '#121712',
+          DEFAULT: '#F3F5F2',
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        sans: ['Plus Jakarta Sans', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
       },
     },
   },

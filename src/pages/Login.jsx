@@ -1,3 +1,4 @@
+import BrandMark from '../components/BrandMark';
 import React, { useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { Mail, Lock, Eye, EyeOff, Zap, AlertCircle } from 'lucide-react';
@@ -36,9 +37,9 @@ export default function Login() {
   };
 
   return (
-    <div className="flex h-screen bg-neutral-50 font-sans">
+    <div className="flex min-h-dvh bg-neutral-50 font-sans">
       {/* ── Left brand panel ── */}
-      <div className="hidden lg:flex w-2/5 bg-primary-900 flex-col justify-between p-10 relative overflow-hidden">
+      <div className="hidden lg:flex w-2/5 bg-brand-green flex-col justify-between p-10 relative overflow-hidden">
         {/* Decorative shapes */}
         <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-secondary-300/10" />
         <div className="absolute bottom-24 -left-12 w-48 h-48 rounded-full bg-tertiary-200/10" />
@@ -46,10 +47,10 @@ export default function Login() {
 
         {/* Brand mark */}
         <div className="flex items-center gap-3 relative z-10">
-          <img src="/logo.png" alt="MS Traders" className="h-12 w-auto object-contain" />
+          <BrandMark reversed />
           <div>
             <p className="text-white font-bold text-xl leading-none">Admin</p>
-            <p className="text-neutral-500 text-xs mt-0.5">Console</p>
+            <p className="text-white/80 text-xs mt-0.5">Console</p>
           </div>
         </div>
 
@@ -71,18 +72,18 @@ export default function Login() {
           <p className="text-white font-semibold text-xl leading-snug mb-2">
             The smarter way<br />to run your store.
           </p>
-          <p className="text-neutral-500 text-sm leading-relaxed">
+          <p className="text-white/80 text-sm leading-relaxed">
             Real-time orders, inventory, analytics — all in one place.
           </p>
         </div>
       </div>
 
       {/* ── Right form panel ── */}
-      <div className="flex-1 flex items-center justify-center px-6">
+      <div className="flex-1 min-w-0 flex items-center justify-center px-4 py-8 sm:px-6">
         <div className="w-full max-w-md">
           {/* Mobile brand mark */}
           <div className="flex items-center gap-2.5 mb-10 lg:hidden">
-            <img src="/logo.png" alt="MS Traders" className="h-10 w-auto object-contain" />
+            <BrandMark />
             <p className="text-primary-900 font-bold text-lg">Admin</p>
           </div>
 

@@ -4,7 +4,7 @@ import IconChip from './IconChip';
 export default function StatCard({ icon, color = 'secondary', label, value, sub, trend, style }) {
   return (
     <div
-      className="bg-white rounded-2xl shadow-card p-6 animate-fade-up opacity-0-init"
+      className="bg-white rounded-2xl shadow-card min-w-0 p-4 xl:p-6 animate-fade-up opacity-0-init"
       style={style}
     >
       <div className="flex items-start justify-between mb-5">
@@ -16,7 +16,7 @@ export default function StatCard({ icon, color = 'secondary', label, value, sub,
         )}
       </div>
       <p className="text-[11px] font-semibold uppercase tracking-widest text-neutral-400 mb-1">{label}</p>
-      <p className="text-3xl font-bold text-primary-900 leading-none">{value}</p>
+      <p className="text-xl xl:text-3xl break-words font-bold text-primary-900 leading-none">{value}</p>
       {sub && <p className="text-xs text-neutral-400 mt-2">{sub}</p>}
     </div>
   );

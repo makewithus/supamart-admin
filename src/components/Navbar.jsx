@@ -1,3 +1,4 @@
+import BrandMark from './BrandMark';
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
@@ -35,14 +36,14 @@ export default function Navbar() {
   return (
     <>
       {/* Mobile top bar — visible below md, replaces the static sidebar with a drawer toggle */}
-      <div className="md:hidden flex items-center justify-between px-4 py-3 bg-primary-900 shadow-sidebar sticky top-0 z-30 flex-shrink-0">
+      <div className="md:hidden flex items-center justify-between px-4 py-3 bg-brand-green shadow-sidebar sticky top-0 z-30 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <img src="/logo.png" alt="MS Traders" className="h-8 w-auto object-contain" />
+          <BrandMark reversed />
           <span className="text-white font-bold text-sm">Admin</span>
         </div>
         <button
           onClick={() => setOpen(true)}
-          className="p-2 -mr-2 text-white/90 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
+          className="min-w-11 min-h-11 flex items-center justify-center -mr-2 text-white rounded-lg hover:bg-white/10 transition-colors"
           aria-label="Open menu"
         >
           <Menu size={22} />
@@ -58,22 +59,22 @@ export default function Navbar() {
       )}
 
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-50 w-64 max-w-[80vw] flex-shrink-0 bg-primary-900 flex flex-col h-screen shadow-sidebar
+        className={`fixed md:static inset-y-0 left-0 z-50 w-64 max-w-[80vw] flex-shrink-0 bg-brand-green flex flex-col h-screen shadow-sidebar
           transform transition-transform duration-200 ease-out md:translate-x-0
           ${open ? 'translate-x-0' : '-translate-x-full'}`}
       >
         {/* Brand */}
         <div className="px-6 pt-7 pb-6 border-b border-white/10 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="MS Traders" className="h-10 w-auto object-contain" />
+          <div className="flex flex-col items-start gap-1">
+            <BrandMark reversed prominent />
             <div>
               <p className="text-white font-bold text-base leading-none">Admin</p>
-              <p className="text-neutral-400 text-[11px] font-medium mt-0.5">Console</p>
+              <p className="text-white/80 text-[11px] font-medium mt-0.5">Console</p>
             </div>
           </div>
           <button
             onClick={() => setOpen(false)}
-            className="md:hidden p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
+            className="md:hidden p-1.5 text-white/80 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
             aria-label="Close menu"
           >
             <X size={18} />
@@ -81,28 +82,30 @@ export default function Navbar() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
+        <nav aria-label="Admin navigation" className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-0.5">
           {NAV.map(({ to, icon: Icon, label }) => {
             const active = isActive(to);
             return (
               <Link
                 key={to}
                 to={to}
+                aria-current={active ? 'page' : undefined}
                 onClick={() => setOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 group
+                className={`flex min-h-11 items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white
                   ${active
-                    ? 'bg-white/12 text-white'
-                    : 'text-neutral-400 hover:bg-white/8 hover:text-white'
+                    ? 'bg-white/[0.16] text-white'
+                    : 'text-white/90 hover:bg-white/[0.08] hover:text-white'
                   }`}
               >
                 <Icon
-                  size={18}
-                  strokeWidth={active ? 2.25 : 1.75}
-                  className={active ? 'text-white' : 'text-neutral-500 group-hover:text-neutral-300'}
+                  size={20}
+                  strokeWidth={active ? 2.5 : 2}
+                  className="shrink-0 text-white"
+                  aria-hidden="true"
                 />
                 {label}
                 {active && (
-                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-secondary-400" />
+                  <span className="ml-auto shrink-0 w-1.5 h-1.5 rounded-full bg-brand-amber" />
                 )}
               </Link>
             );
@@ -123,7 +126,7 @@ export default function Navbar() {
                 playNotificationSound();
                 toast.success('Playing test alert sound…', { duration: 2000 });
               }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-neutral-400
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/80
                 hover:bg-white/8 hover:text-white transition-all duration-150"
             >
               <Volume2 size={18} strokeWidth={1.75} />
@@ -132,7 +135,7 @@ export default function Navbar() {
           )}
           <button
             onClick={() => auth.signOut()}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-neutral-400
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-white/80
               hover:bg-red-950/40 hover:text-red-400 transition-all duration-150"
           >
             <LogOut size={18} strokeWidth={1.75} />
