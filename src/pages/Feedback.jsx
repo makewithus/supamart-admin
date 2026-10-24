@@ -52,59 +52,30 @@ export default function Feedback() {
           id: o.id,
           orderNo: o.orderNo || o.id?.slice(-4),
           customerName: o.userName || o.customerName || 'Customer',
-          phone: o.userPhone || o.customerPhone || '9876543210',
+          phone: o.userPhone || o.customerPhone || '',
           rating: star,
-          tags: o.ratings?.tags || o.tags || ['Service issue'],
-          comment: o.ratings?.review || o.deliveryReview || o.comment || 'Order feedback provided.',
+          tags: o.ratings?.tags || o.tags || ['Customer Feedback'],
+          comment: o.ratings?.review || o.deliveryReview || o.comment || 'Feedback received.',
         });
       }
     });
 
-    // If database does not yet have enough ratings to match screenshot demonstration, provide standard baseline
     if (rated.length === 0) {
       return {
-        avgRating: '4.4',
-        totalRatings: 38,
+        avgRating: '0.0',
+        totalRatings: 0,
         breakdown: [
-          { star: 5, count: 21, color: 'bg-[#0a7c47]' },
-          { star: 4, count: 10, color: 'bg-[#059669]' },
-          { star: 3, count: 4, color: 'bg-[#f59e0b]' },
-          { star: 2, count: 2, color: 'bg-[#ef4444]' },
-          { star: 1, count: 1, color: 'bg-[#dc2626]' },
+          { star: 5, count: 0, color: 'bg-[#0a7c47]' },
+          { star: 4, count: 0, color: 'bg-[#059669]' },
+          { star: 3, count: 0, color: 'bg-[#f59e0b]' },
+          { star: 2, count: 0, color: 'bg-[#ef4444]' },
+          { star: 1, count: 0, color: 'bg-[#dc2626]' },
         ],
-        followUps: [
-          {
-            id: 'mock-1021',
-            orderNo: '1021',
-            customerName: 'Krrish Singhal',
-            phone: '9876543210',
-            rating: 2,
-            tags: ['Late delivery'],
-            comment: 'Came after the slot ended.',
-          },
-          {
-            id: 'mock-1022',
-            orderNo: '1022',
-            customerName: 'Test',
-            phone: '9876543211',
-            rating: 3,
-            tags: ['Missing item', 'Not fresh'],
-            comment: 'Chilli was missing and the tomatoes were soft.',
-          },
-          {
-            id: 'mock-1014',
-            orderNo: '1014',
-            customerName: 'Mohan Sharma',
-            phone: '9876543212',
-            rating: 1,
-            tags: ['Wrong item'],
-            comment: 'Got the wrong brand of oil.',
-          },
-        ],
+        followUps: [],
       };
     }
 
-    const calculatedAvg = (sum / (rated.length || 1)).toFixed(1);
+    const calculatedAvg = (sum / rated.length).toFixed(1);
     const calculatedBreakdown = [
       { star: 5, count: counts[5] || 0, color: 'bg-[#0a7c47]' },
       { star: 4, count: counts[4] || 0, color: 'bg-[#059669]' },
@@ -136,12 +107,10 @@ export default function Feedback() {
     localStorage.setItem('ms_admin_resolved_reviews', JSON.stringify(next));
 
     try {
-      if (!item.id.startsWith('mock-')) {
-        await updateDoc(doc(db, 'orders', item.id), {
-          'ratings.isResolved': true,
-          'ratings.resolvedAt': Date.now(),
-        });
-      }
+      await updateDoc(doc(db, 'orders', item.id), {
+        'ratings.isResolved': true,
+        'ratings.resolvedAt': Date.now(),
+      });
       toast.success(`Review for #${item.orderNo} marked as resolved!`);
     } catch (_) {
       toast.success(`Review for #${item.orderNo} marked as resolved!`);
@@ -210,7 +179,7 @@ export default function Feedback() {
             {visibleFollowUps.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-500 flex flex-col items-center justify-center gap-2">
                 <CheckCircle2 size={28} className="text-[#0a7c47]" />
-                <span>All low rating reviews have been resolved! Great work!</span>
+                <span>{totalRatings === 0 ? 'No customer ratings received yet.' : 'All low rating reviews have been resolved! Great work!'}</span>
               </div>
             ) : (
               visibleFollowUps.map((item) => {

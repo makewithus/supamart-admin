@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { auth, db } from '../config/firebase';
 import { collection, query, orderBy, onSnapshot, where } from 'firebase/firestore';
+import { useBadges } from '../context/BadgeContext';
 import productImages from '../utils/productImages';
 import { formatDeliverySlot } from '../utils/orderUtils';
 
@@ -45,12 +46,12 @@ function MiniSparkline({ heights = [40, 60, 50, 75, 100], color = '#0A7C47' }) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { dashboardLowStock } = useBadges();
   const [timeRange, setTimeRange] = useState('Today');
   const [hoveredBar, setHoveredBar] = useState(null);
 
   // Real-time state
   const [orders, setOrders] = useState([]);
-  const [products, setProducts] = useState([]);
   const [issues, setIssues] = useState([]);
   const [partners, setPartners] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,16 +71,6 @@ export default function Dashboard() {
     } catch (_) {
       setLoading(false);
     }
-  }, []);
-
-  // Subscribe to real-time products
-  useEffect(() => {
-    try {
-      const unsub = onSnapshot(collection(db, 'products'), (snap) => {
-        setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      }, () => {});
-      return () => unsub();
-    } catch (_) {}
   }, []);
 
   // Subscribe to real-time issues
@@ -144,13 +135,9 @@ export default function Dashboard() {
     const openIssues = issues.filter((i) => i.status === 'OPEN' || !i.resolved);
     const overdueIssues = openIssues.filter((i) => (Date.now() - (i.createdAt || 0)) > 2 * 3600 * 1000);
 
-    // Low on stock items
-    const lowStock = products.filter((p) => {
-      if (p.stock !== undefined && p.stock <= 10) return true;
-      if (p.variants && p.variants.some((v) => v.stock <= 10)) return true;
-      return false;
-    });
-    const lowNames = lowStock.slice(0, 3).map((p) => p.name?.toLowerCase()).join(', ') || 'Eggs, milk, toor dal';
+    // Low on stock items (from shared BadgeContext single listener)
+    const lowStockCount = dashboardLowStock?.count || 0;
+    const lowNames = dashboardLowStock?.names || 'Eggs, milk, toor dal';
 
     return {
       newOrdersCount: newOrders.length || 4,
@@ -159,26 +146,26 @@ export default function Dashboard() {
       unverifiedAmount: unverifiedAmount || 4862,
       openIssuesCount: openIssues.length || 2,
       overdueIssuesCount: overdueIssues.length || 1,
-      lowStockCount: lowStock.length || 3,
+      lowStockCount: lowStockCount || 3,
       lowStockNames: lowNames,
     };
-  }, [orders, issues, products]);
+  }, [orders, issues, dashboardLowStock]);
 
   // 2. Metric KPI Cards (Today vs Range)
   const kpiData = useMemo(() => {
     const todayOrders = orders.filter((o) => (o.createdAt || 0) >= startOfToday);
-    const todayRevenue = todayOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const revenueToday = todayOrders.reduce((sum, o) => sum + (o.total || 0), 0);
     const todayCount = todayOrders.length;
-    const avgOrder = todayCount > 0 ? Math.round(todayRevenue / todayCount) : 313;
+    const avgOrder = todayCount > 0 ? Math.round(revenueToday / todayCount) : 0;
 
     const deliveredToday = todayOrders.filter((o) => o.status === 'DELIVERED').length;
-    const onTimeRate = todayCount > 0 ? Math.round((deliveredToday / todayCount) * 100) : 92;
+    const onTimeRate = todayCount > 0 ? Math.round((deliveredToday / todayCount) * 100) : 100;
 
     return {
-      revenueToday: todayRevenue > 0 ? todayRevenue : 8460,
-      ordersToday: todayCount > 0 ? todayCount : 27,
-      avgOrder: avgOrder > 0 ? avgOrder : 313,
-      onTimeRate: onTimeRate > 0 ? onTimeRate : 92,
+      revenueToday,
+      ordersToday: todayCount,
+      avgOrder,
+      onTimeRate,
     };
   }, [orders, startOfToday]);
 
@@ -208,128 +195,36 @@ export default function Dashboard() {
     const series = Object.values(dayMap);
     const totalRev = series.reduce((sum, item) => sum + item.amount, 0);
 
-    // If no past orders in fresh dev database, provide authentic baseline matching designer mockup
-    if (totalRev === 0) {
-      const baseline = [
-        { day: '11', amount: 5200 },
-        { day: '12', amount: 7600 },
-        { day: '13', amount: 4800 },
-        { day: '14', amount: 8400 },
-        { day: '15', amount: 7200 },
-        { day: '16', amount: 9800 },
-        { day: '17', amount: 11200 },
-        { day: '18', amount: 6500 },
-        { day: '19', amount: 6800 },
-        { day: '20', amount: 5900 },
-        { day: '21', amount: 8200 },
-        { day: '22', amount: 8900 },
-        { day: '23', amount: 10400 },
-        { day: '24', amount: 8460, isToday: true },
-      ];
-      return {
-        series: baseline,
-        totalRevenue: 104380,
-      };
-    }
-
     return {
       series,
       totalRevenue: totalRev,
     };
   }, [orders, startOfToday, startOf14DaysAgo]);
 
-  // 4. Today's Delivery Slots (Real-time computed)
-  const deliverySlotsData = useMemo(() => {
-    const todayOrders = orders.filter((o) => (o.createdAt || 0) >= startOfToday);
-    const slots = [
-      { name: '9–11 AM', current: 0, max: 12, closed: true },
-      { name: '11 AM–1 PM', current: 0, max: 12, closed: true },
-      { name: '4–6 PM', current: 0, max: 12, closed: false },
-      { name: '6–8 PM', current: 0, max: 12, closed: false },
-    ];
-
-    todayOrders.forEach((o) => {
-      const slotName = formatDeliverySlot(o.deliverySlot || o.slot, '');
-      const match = slots.find((s) => s.name === slotName || (slotName && (s.name.includes(slotName) || slotName.includes(s.name))));
-      if (match) match.current += 1;
-    });
-
-    // Baseline fallback if orders don't specify explicit slot
-    if (slots[0].current === 0 && slots[2].current === 0) {
-      slots[0].current = 11;
-      slots[1].current = 12;
-      slots[2].current = 9;
-      slots[3].current = 3;
-    }
-
-    return slots;
-  }, [orders, startOfToday]);
+  // 4. Delivery Partners & Fleet Status (Real-time computed)
+  const deliveryFleetData = useMemo(() => {
+    const onDuty = partners.filter((p) => p.isOnDuty !== false && p.isActive !== false);
+    const offDuty = partners.filter((p) => p.isOnDuty === false || p.isActive === false);
+    const activeDeliveries = orders.filter((o) => o.status === 'OUT_FOR_DELIVERY' || o.status === 'ORDER_ACCEPTED');
+    return {
+      onDutyCount: onDuty.length,
+      offDutyCount: offDuty.length,
+      totalCount: partners.length,
+      activeDeliveriesCount: activeDeliveries.length,
+      partnersList: partners.slice(0, 4).map((p) => ({
+        id: p.id,
+        name: p.name || 'Partner',
+        isOnDuty: p.isOnDuty !== false && p.isActive !== false,
+        activeOrders: orders.filter((o) => o.assignedPartnerId === p.id && (o.status === 'OUT_FOR_DELIVERY' || o.status === 'ORDER_ACCEPTED')).length,
+      })),
+    };
+  }, [partners, orders]);
 
   // 5. Recent Orders (Real-time)
   const recentOrdersList = useMemo(() => {
-    if (orders.length === 0) {
-      return [
-        {
-          id: '1031',
-          displayId: '#1031',
-          customer: 'Krrish Singhal',
-          total: 412,
-          paymentText: 'Verify UTR',
-          paymentType: 'verify',
-          status: 'New',
-          statusType: 'new',
-          placed: '4 min ago',
-        },
-        {
-          id: '1030',
-          displayId: '#1030',
-          customer: 'Mohan Sharma',
-          total: 1186,
-          paymentText: 'Paid · UPI',
-          paymentType: 'paid',
-          status: 'New',
-          statusType: 'new',
-          placed: '7 min ago',
-        },
-        {
-          id: '1029',
-          displayId: '#1029',
-          customer: 'Ansar',
-          total: 238,
-          paymentText: 'Cash on delivery',
-          paymentType: 'cod',
-          status: 'New',
-          statusType: 'new',
-          placed: '11 min ago',
-        },
-        {
-          id: '1028',
-          displayId: '#1028',
-          customer: 'Mohammed Sherhan',
-          total: 536,
-          paymentText: 'Verify UTR',
-          paymentType: 'verify',
-          status: 'New',
-          statusType: 'new',
-          placed: '18 min ago',
-        },
-        {
-          id: '1027',
-          displayId: '#1027',
-          customer: 'Sudarsanan',
-          total: 948,
-          paymentText: 'Paid · UPI',
-          paymentType: 'paid',
-          status: 'Packing',
-          statusType: 'packing',
-          placed: '32 min ago',
-        },
-      ];
-    }
-
     return orders.slice(0, 5).map((o) => {
-      let pType = 'cod';
-      let pText = 'Cash on delivery';
+      let pType = 'paid';
+      let pText = 'Paid · Online';
       if (o.paymentMethod === 'UPI_MANUAL') {
         if (o.paymentStatus === 'PAID') {
           pType = 'paid';
@@ -387,25 +282,16 @@ export default function Dashboard() {
     });
 
     const sorted = Object.values(salesMap).sort((a, b) => b.count - a.count);
-    if (sorted.length >= 3) {
-      return sorted.slice(0, 3).map((item, idx) => ({
-        rank: idx + 1,
-        name: item.name,
-        sold: `${item.count} sold`,
-        imageKey: item.name,
-        image: item.image,
-      }));
-    }
-
-    // Default baseline if past week has few order items
-    return [
-      { rank: 1, name: 'Full Cream Milk', sold: '64 sold', imageKey: 'Full Cream Milk' },
-      { rank: 2, name: 'Tomato (Local)', sold: '41 sold', imageKey: 'Tomato (Local)' },
-      { rank: 3, name: 'Onion', sold: '37 sold', imageKey: 'Onion' },
-    ];
+    return sorted.slice(0, 5).map((item, idx) => ({
+      rank: idx + 1,
+      name: item.name,
+      sold: `${item.count} sold`,
+      imageKey: item.name,
+      image: item.image,
+    }));
   }, [orders, startOf7DaysAgo]);
 
-  const partnerCount = partners.length || 4;
+  const partnerCount = partners.length;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 w-full">
@@ -541,7 +427,7 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-emerald-600">
-              +12% <span className="font-semibold text-gray-400">vs last Saturday</span>
+              Live <span className="font-semibold text-gray-400">today's gross</span>
             </span>
             <MiniSparkline heights={[40, 65, 45, 80, 100]} />
           </div>
@@ -555,7 +441,7 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-emerald-600">
-              +5 <span className="font-semibold text-gray-400">vs last Saturday</span>
+              {kpiData.ordersToday} <span className="font-semibold text-gray-400">{kpiData.ordersToday === 1 ? 'order placed' : 'orders placed'}</span>
             </span>
             <MiniSparkline heights={[50, 40, 70, 85, 100]} />
           </div>
@@ -568,8 +454,8 @@ export default function Dashboard() {
             <span className="text-2xl font-black text-gray-900 tracking-tight">₹{formatRupee(kpiData.avgOrder)}</span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-[#dc2626]">
-              -₹9 <span className="font-semibold text-gray-400">vs 7-day average</span>
+            <span className="text-xs font-bold text-gray-700">
+              Per cart <span className="font-semibold text-gray-400">average</span>
             </span>
             <MiniSparkline heights={[60, 50, 65, 45, 90]} />
           </div>
@@ -583,7 +469,7 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-emerald-600">
-              +3 pts <span className="font-semibold text-gray-400">this week</span>
+              On schedule <span className="font-semibold text-gray-400">rate</span>
             </span>
             <MiniSparkline heights={[70, 65, 80, 85, 100]} />
           </div>
@@ -665,13 +551,18 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Right: Today's Delivery Slots (1 col) */}
+        {/* Right: Delivery Fleet & Duty Status (1 col) */}
         <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-2xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-extrabold text-gray-900 tracking-tight">
-                Today’s delivery slots
-              </h2>
+              <div>
+                <h2 className="text-sm font-extrabold text-gray-900 tracking-tight">
+                  Delivery Fleet & Duty
+                </h2>
+                <p className="text-[11px] font-semibold text-gray-400 mt-0.5">
+                  {deliveryFleetData.onDutyCount} on duty · {deliveryFleetData.activeDeliveriesCount} out on delivery
+                </p>
+              </div>
               <button
                 onClick={() => navigate('/deliveries')}
                 className="text-xs font-bold text-emerald-600 hover:text-emerald-700 transition-colors"
@@ -680,34 +571,37 @@ export default function Dashboard() {
               </button>
             </div>
 
-            {/* Slots list */}
-            <div className="space-y-4">
-              {deliverySlotsData.map((slot, sIdx) => {
-                const pct = Math.min(100, Math.round((slot.current / slot.max) * 100));
-                return (
-                  <div key={sIdx}>
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <span className={`font-bold ${slot.closed ? 'text-gray-700' : 'text-gray-900'}`}>{slot.name}</span>
-                      <span className={`${slot.closed ? 'text-gray-400 font-semibold' : 'text-gray-600 font-bold'}`}>
-                        {slot.current}/{slot.max} orders {slot.closed ? '· Closed' : ''}
-                      </span>
+            {/* Partners Duty List */}
+            <div className="space-y-3">
+              {deliveryFleetData.partnersList.length === 0 ? (
+                <div className="text-xs text-gray-400 text-center py-4">No registered partners yet</div>
+              ) : (
+                deliveryFleetData.partnersList.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between p-2 rounded-xl bg-gray-50 border border-gray-100">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${p.isOnDuty ? 'bg-emerald-500 ring-2 ring-emerald-200' : 'bg-gray-300'}`} />
+                      <span className="text-xs font-bold text-gray-800">{p.name}</span>
                     </div>
-                    <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        style={{ width: `${pct}%` }}
-                        className={`h-full transition-all duration-500 ${slot.closed ? 'bg-gray-300' : 'bg-[#0A7C47]'}`}
-                      />
+                    <div className="flex items-center gap-1.5">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${p.isOnDuty ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>
+                        {p.isOnDuty ? 'On Duty' : 'Off Duty'}
+                      </span>
+                      {p.activeOrders > 0 && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-100 text-cyan-800">
+                          {p.activeOrders} active
+                        </span>
+                      )}
                     </div>
                   </div>
-                );
-              })}
+                ))
+              )}
             </div>
           </div>
 
           {/* Bottom callout note */}
           <div className="mt-5 p-3 rounded-xl bg-gray-50 border border-gray-200/60 text-center">
             <p className="text-[11px] font-semibold text-gray-500 leading-relaxed">
-              Free delivery above ₹199 · 5 km radius · {partnerCount} partners on duty
+              On-demand instant assignment · {deliveryFleetData.onDutyCount} ready to receive orders
             </p>
           </div>
         </div>
@@ -742,52 +636,60 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 font-medium text-gray-800">
-                {recentOrdersList.map((order) => (
-                  <tr
-                    key={order.id}
-                    onClick={() => navigate('/orders', { state: { openOrderId: order.id } })}
-                    className="hover:bg-gray-50/70 cursor-pointer transition-colors"
-                  >
-                    <td className="py-3 font-mono font-bold text-gray-900">{order.displayId}</td>
-                    <td className="py-3 font-bold text-gray-900">{order.customer}</td>
-                    <td className="py-3 font-extrabold text-gray-900">₹{order.total}</td>
-                    <td className="py-3">
-                      {order.paymentType === 'verify' && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
-                          Verify UTR
-                        </span>
-                      )}
-                      {order.paymentType === 'paid' && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                          {order.paymentText}
-                        </span>
-                      )}
-                      {order.paymentType === 'cod' && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-gray-100 text-gray-700 border border-gray-200/60">
-                          Cash on delivery
-                        </span>
-                      )}
+                {recentOrdersList.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-gray-400 font-medium">
+                      No recent orders placed yet.
                     </td>
-                    <td className="py-3">
-                      {order.statusType === 'new' && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-600">
-                          New
-                        </span>
-                      )}
-                      {order.statusType === 'packing' && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700">
-                          {order.status}
-                        </span>
-                      )}
-                      {order.statusType === 'paid' && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700">
-                          {order.status}
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 text-gray-400 font-semibold">{order.placed}</td>
                   </tr>
-                ))}
+                ) : (
+                  recentOrdersList.map((order) => (
+                    <tr
+                      key={order.id}
+                      onClick={() => navigate('/orders', { state: { openOrderId: order.id } })}
+                      className="hover:bg-gray-50/70 cursor-pointer transition-colors"
+                    >
+                      <td className="py-3 font-mono font-bold text-gray-900">{order.displayId}</td>
+                      <td className="py-3 font-bold text-gray-900">{order.customer}</td>
+                      <td className="py-3 font-extrabold text-gray-900">₹{order.total}</td>
+                      <td className="py-3">
+                        {order.paymentType === 'verify' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
+                            Verify UTR
+                          </span>
+                        )}
+                        {order.paymentType === 'paid' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                            {order.paymentText}
+                          </span>
+                        )}
+                        {order.paymentType === 'cod' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-gray-100 text-gray-700 border border-gray-200/60">
+                            Cash on delivery
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3">
+                        {order.statusType === 'new' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-600">
+                            New
+                          </span>
+                        )}
+                        {order.statusType === 'packing' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700">
+                            {order.status}
+                          </span>
+                        )}
+                        {order.statusType === 'paid' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700">
+                            {order.status}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 text-gray-400 font-semibold">{order.placed}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -800,32 +702,38 @@ export default function Dashboard() {
           </h2>
 
           <div className="space-y-3.5">
-            {bestSellersList.map((item) => {
-              const imgSrc = item.image || productImages[item.imageKey] || '/product-images/full_cream_milk.jpg';
-              return (
-                <div key={item.rank} className="flex items-center gap-3">
-                  <span className="text-xs font-bold text-gray-400 w-3 text-center">
-                    {item.rank}
-                  </span>
-                  <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-50 border border-gray-100 shrink-0">
-                    <img
-                      src={imgSrc}
-                      alt={item.name}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.src = '/product-images/full_cream_milk.jpg';
-                      }}
-                    />
+            {bestSellersList.length === 0 ? (
+              <p className="py-8 text-center text-gray-400 text-xs font-medium">
+                No items sold this week yet.
+              </p>
+            ) : (
+              bestSellersList.map((item) => {
+                const imgSrc = item.image || productImages[item.imageKey] || '/product-images/full_cream_milk.jpg';
+                return (
+                  <div key={item.rank} className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-gray-400 w-3 text-center">
+                      {item.rank}
+                    </span>
+                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-50 border border-gray-100 shrink-0">
+                      <img
+                        src={imgSrc}
+                        alt={item.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.src = '/product-images/full_cream_milk.jpg';
+                        }}
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-gray-900 truncate">{item.name}</p>
+                    </div>
+                    <span className="text-xs font-semibold text-gray-400 shrink-0">
+                      {item.sold}
+                    </span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-gray-900 truncate">{item.name}</p>
-                  </div>
-                  <span className="text-xs font-semibold text-gray-400 shrink-0">
-                    {item.sold}
-                  </span>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
       </div>

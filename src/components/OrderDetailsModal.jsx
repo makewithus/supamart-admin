@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   X, Printer, Phone, MessageSquare, Check,
-  CheckCircle2, XCircle, AlertCircle
+  CheckCircle2, XCircle, AlertCircle, Clock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { apiPatch } from '../services/api';
 import productImages from '../utils/productImages';
-import { formatDeliverySlot } from '../utils/orderUtils';
+import { db } from '../config/firebase';
+import { doc, onSnapshot, collection } from 'firebase/firestore';
 
 const STEPS = [
   { id: 'ORDER_PLACED', label: 'Placed' },
@@ -16,10 +17,13 @@ const STEPS = [
   { id: 'DELIVERED', label: 'Delivered' }
 ];
 
-export default function OrderDetailsModal({ order, onClose, onSuccess }) {
+export default function OrderDetailsModal({ order, partners: initialPartners = [], onClose, onSuccess }) {
   if (!order) return null;
 
+  const [liveOrder, setLiveOrder] = useState(order);
+  const [partners, setPartners] = useState(initialPartners);
   const [loading, setLoading] = useState(false);
+  const [assigningPartner, setAssigningPartner] = useState(false);
   const [internalNote, setInternalNote] = useState(order.adminNote || '');
   const [itemsChecked, setItemsChecked] = useState(() => {
     const initial = {};
@@ -29,19 +33,47 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
     return initial;
   });
 
-  const orderNo = order.displayId || (order.orderNo ? `#${order.orderNo}` : `#${order.id?.slice(-4) || '1031'}`);
-  const customerName = (typeof order.userName === 'string' ? order.userName : null)
-    || (typeof order.customer === 'string' ? order.customer : null)
-    || order.addressSnapshot?.name
-    || order.address?.name
+  // Subscribe to live order updates in real-time
+  useEffect(() => {
+    if (!order.id || order.id.startsWith('#')) return;
+    try {
+      const unsub = onSnapshot(doc(db, 'orders', order.id), (docSnap) => {
+        if (docSnap.exists()) {
+          setLiveOrder({ id: docSnap.id, ...docSnap.data() });
+        }
+      });
+      return () => unsub();
+    } catch (_) {}
+  }, [order.id]);
+
+  // Subscribe to live delivery partners if not supplied
+  useEffect(() => {
+    if (initialPartners && initialPartners.length > 0) {
+      setPartners(initialPartners);
+      return;
+    }
+    try {
+      const unsub = onSnapshot(collection(db, 'deliveryPartners'), (snap) => {
+        setPartners(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      });
+      return () => unsub();
+    } catch (_) {}
+  }, [initialPartners]);
+
+  const activeOrderData = liveOrder || order;
+  const orderNo = activeOrderData.displayId || (activeOrderData.orderNo ? `#${activeOrderData.orderNo}` : `#${activeOrderData.id?.slice(-4) || ''}`);
+  const customerName = (typeof activeOrderData.userName === 'string' ? activeOrderData.userName : null)
+    || (typeof activeOrderData.customer === 'string' ? activeOrderData.customer : null)
+    || activeOrderData.addressSnapshot?.name
+    || activeOrderData.address?.name
     || 'Customer';
-  const customerPhone = (typeof order.userPhone === 'string' ? order.userPhone : null)
-    || order.addressSnapshot?.phone
-    || order.address?.phone
+  const customerPhone = (typeof activeOrderData.userPhone === 'string' ? activeOrderData.userPhone : null)
+    || activeOrderData.addressSnapshot?.phone
+    || activeOrderData.address?.phone
     || '—';
   const address = (() => {
-    const rawAddr = order.address || order.addressSnapshot;
-    if (!rawAddr) return 'House no. [—], Menamkulam, Thiruvananthapuram · 0.8 km from store';
+    const rawAddr = activeOrderData.address || activeOrderData.addressSnapshot;
+    if (!rawAddr) return 'Address not provided';
     if (typeof rawAddr === 'string') return rawAddr;
     if (typeof rawAddr === 'object') {
       if (rawAddr.formattedAddress) return rawAddr.formattedAddress;
@@ -51,59 +83,54 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
     }
     return String(rawAddr);
   })();
-  const instructions = (typeof order.deliveryInstructions === 'string' ? order.deliveryInstructions : null)
-    || (typeof order.instructions === 'string' ? order.instructions : null)
-    || (typeof order.notes === 'string' ? order.notes : null)
+  const instructions = (typeof activeOrderData.deliveryInstructions === 'string' ? activeOrderData.deliveryInstructions : null)
+    || (typeof activeOrderData.instructions === 'string' ? activeOrderData.instructions : null)
+    || (typeof activeOrderData.notes === 'string' ? activeOrderData.notes : null)
     || '';
-  const slot = formatDeliverySlot(order.slot || order.deliverySlot, '4–6 PM slot');
-  const placedTime = typeof order.placed === 'string' ? order.placed : 'Placed 4 min ago';
-  const paymentMethod = typeof order.paymentMethod === 'string' ? order.paymentMethod : 'UPI · Google Pay';
-  const utr = (typeof order.paymentDetails?.utr === 'string' ? order.paymentDetails.utr : null)
-    || (typeof order.utr === 'string' ? order.utr : null)
-    || (typeof order.upiRef === 'string' ? order.upiRef : null)
-    || '4298103173301';
-  const paymentStatus = order.paymentStatus || 'AWAITING_CONFIRMATION';
+  const placedTime = activeOrderData.placed || (activeOrderData.createdAt ? new Date(activeOrderData.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '');
+  const paymentMethod = typeof activeOrderData.paymentMethod === 'string' ? activeOrderData.paymentMethod : 'UPI';
+  const utr = (typeof activeOrderData.paymentDetails?.utr === 'string' ? activeOrderData.paymentDetails.utr : null)
+    || (typeof activeOrderData.utr === 'string' ? activeOrderData.utr : null)
+    || (typeof activeOrderData.upiRef === 'string' ? activeOrderData.upiRef : null)
+    || '—';
+  const paymentStatus = activeOrderData.paymentStatus || 'AWAITING_CONFIRMATION';
 
-  // Fallback demo items if order has no items populated
-  const displayItems = (order.items && order.items.length > 0) ? order.items : [
-    {
-      id: 'i1',
-      name: 'Tomato (Local)',
-      variant: '500 g x 2',
-      price: 44,
-      imageKey: 'Tomato (Local)'
-    },
-    {
-      id: 'i2',
-      name: 'Toor Dal (Unpolished)',
-      variant: '1 kg x 1',
-      price: 158,
-      imageKey: 'Toor Dal (Unpolished)'
-    },
-    {
-      id: 'i3',
-      name: 'Farm Eggs',
-      variant: '6 pcs x 1',
-      price: 48,
-      imageKey: 'Farm Eggs'
-    }
-  ];
+  const displayItems = Array.isArray(activeOrderData.items) ? activeOrderData.items : [];
 
-  const itemTotal = displayItems.reduce((acc, it) => acc + (Number(it.price) || 0), 0);
-  const deliveryFee = 0;
-  const toCollect = order.total || itemTotal;
+  const itemTotal = displayItems.reduce((acc, it) => acc + (Number(it.price || it.unitPrice || 0) * (Number(it.qty || it.quantity || 1))), 0);
+  const deliveryFee = activeOrderData.deliveryFee || 0;
+  const toCollect = activeOrderData.total || itemTotal + deliveryFee;
 
   // Determine current step index
   const currentStepIdx = (() => {
-    if (order.status === 'DELIVERED') return 4;
-    if (order.status === 'OUT_FOR_DELIVERY') return 3;
-    if (order.status === 'PACKING' || order.status === 'READY_FOR_DELIVERY') return 2;
-    if (order.status === 'ORDER_ACCEPTED') return 1;
+    if (activeOrderData.status === 'DELIVERED') return 4;
+    if (activeOrderData.status === 'OUT_FOR_DELIVERY') return 3;
+    if (activeOrderData.status === 'PACKING' || activeOrderData.status === 'READY_FOR_DELIVERY') return 2;
+    if (activeOrderData.status === 'ORDER_ACCEPTED') return 1;
     return 0; // Placed
   })();
 
   const handleToggleItem = (id) => {
     setItemsChecked((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleAssignPartnerModal = async (partnerId) => {
+    if (!partnerId) return;
+    const target = partners.find((p) => p.id === partnerId);
+    if (target && (target.isOnDuty === false || target.isActive === false)) {
+      toast.error(`${target.name} is currently OFF DUTY and cannot be assigned`);
+      return;
+    }
+    setAssigningPartner(true);
+    try {
+      await apiPatch(`/orders/${order.id}/assign`, { partnerId });
+      toast.success(`Assigned order to ${target?.name || 'Partner'}`);
+      onSuccess?.();
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to assign partner');
+    } finally {
+      setAssigningPartner(false);
+    }
   };
 
   const handleAcceptOrder = async () => {
@@ -116,9 +143,7 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
       onSuccess?.();
       onClose();
     } catch (e) {
-      toast.success(`Order ${orderNo} accepted!`);
-      onSuccess?.();
-      onClose();
+      toast.error(e.response?.data?.error || `Failed to accept order ${orderNo}`);
     } finally {
       setLoading(false);
     }
@@ -131,13 +156,11 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
       if (order.id && !order.id.startsWith('#')) {
         await apiPatch(`/orders/${order.id}/status`, { status: 'CANCELLED' });
       }
-      toast.error(`Order ${orderNo} cancelled`);
+      toast.success(`Order ${orderNo} cancelled`);
       onSuccess?.();
       onClose();
     } catch (e) {
-      toast.error(`Order ${orderNo} cancelled`);
-      onSuccess?.();
-      onClose();
+      toast.error(e.response?.data?.error || `Failed to cancel order ${orderNo}`);
     } finally {
       setLoading(false);
     }
@@ -147,13 +170,12 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
     setLoading(true);
     try {
       if (order.id && !order.id.startsWith('#')) {
-        await apiPatch(`/payments/orders/${order.id}/confirm`, { note: 'Verified by admin' });
+        await apiPatch(`/orders/${order.id}/mark-paid`);
       }
       toast.success('Amount and UTR verified! Payment marked as PAID.');
       onSuccess?.();
     } catch (e) {
-      toast.success('Amount and UTR match verified!');
-      onSuccess?.();
+      toast.error(e.response?.data?.error || 'Failed to verify payment');
     } finally {
       setLoading(false);
     }
@@ -164,13 +186,12 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
     setLoading(true);
     try {
       if (order.id && !order.id.startsWith('#')) {
-        await apiPatch(`/payments/orders/${order.id}/reject`, { reason: 'UTR mismatch' });
+        await apiPatch(`/orders/${order.id}/reject-payment`, { reason: 'UTR mismatch or amount not credited' });
       }
-      toast.error('Payment rejected');
+      toast.success('Payment rejected');
       onSuccess?.();
     } catch (e) {
-      toast.error('Payment rejected');
-      onSuccess?.();
+      toast.error(e.response?.data?.error || 'Failed to reject payment');
     } finally {
       setLoading(false);
     }
@@ -211,7 +232,7 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
               </span>
             </div>
             <p className="text-xs font-semibold text-gray-400 mt-1">
-              {placedTime} · {formatDeliverySlot(slot, '4–6 PM slot')}
+              {placedTime} · Instant Delivery
             </p>
           </div>
 
@@ -263,6 +284,45 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
               })}
             </div>
           </div>
+
+          {/* Delivery Delay Callout Banner if reported */}
+          {(activeOrderData.delayReason || activeOrderData.deliveryDelay) && (
+            <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 shadow-2xs">
+              <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-black text-amber-950">
+                    ⚠️ Delivery Delayed by Partner
+                  </p>
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 bg-amber-200 text-amber-900 rounded-md">
+                    New ETA: {activeOrderData.deliveryDelay?.newEstimatedTime || 'Delayed'}
+                  </span>
+                </div>
+                <p className="text-xs text-amber-800 mt-1 font-medium">
+                  <span className="font-bold">Reason:</span> {activeOrderData.delayReason || activeOrderData.deliveryDelay?.reason || 'Traffic/Weather delay'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Customer Confirmation & Rating Status Banner */}
+          {(activeOrderData.confirmedAt || activeOrderData.status === 'DELIVERED') && (
+            <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center justify-between shadow-2xs">
+              <div>
+                <p className="text-xs font-black text-emerald-950">
+                  ✓ Order Collected & Confirmed by Customer
+                </p>
+                <p className="text-[11px] text-emerald-700 font-medium mt-0.5">
+                  Verified receipt via mobile app
+                </p>
+              </div>
+              {(activeOrderData.orderRating || activeOrderData.rating) && (
+                <span className="px-2.5 py-1 bg-[#0A7C47] text-white rounded-lg text-xs font-black shadow-2xs">
+                  ★ {activeOrderData.orderRating || activeOrderData.rating}/5
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Action Buttons: Accept / Cancel */}
           <div className="flex items-center gap-2.5">
@@ -344,43 +404,49 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
             </div>
 
             <div className="divide-y divide-gray-100">
-              {displayItems.map((it, idx) => {
-                const id = it.id || it.productId || idx;
-                const isChecked = itemsChecked[id] !== false;
-                const imgSrc = productImages[it.name] || productImages[it.imageKey] || '/product-images/full_cream_milk.jpg';
+              {displayItems.length === 0 ? (
+                <p className="text-xs text-gray-400 py-4 text-center">No items listed for this order.</p>
+              ) : (
+                displayItems.map((it, idx) => {
+                  const id = it.id || it.productId || idx;
+                  const isChecked = itemsChecked[id] !== false;
+                  const imgSrc = productImages[it.name] || productImages[it.imageKey] || it.image || '/product-images/full_cream_milk.jpg';
+                  const price = Number(it.price || it.unitPrice || 0);
+                  const qty = Number(it.qty || it.quantity || 1);
 
-                return (
-                  <div key={id} className="py-2.5 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => handleToggleItem(id)}
-                        className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-[#0A7C47]"
-                      />
-                      <div className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-100 overflow-hidden shrink-0">
-                        <img
-                          src={imgSrc}
-                          alt={it.name}
-                          className="w-full h-full object-cover"
+                  return (
+                    <div key={id} className="py-2.5 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleItem(id)}
+                          className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-[#0A7C47]"
                         />
+                        <div className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-100 overflow-hidden shrink-0">
+                          <img
+                            src={imgSrc}
+                            alt={it.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div>
+                          <p className={`text-xs font-bold text-gray-900 ${!isChecked ? 'line-through text-gray-400' : ''}`}>
+                            {it.name}
+                          </p>
+                          <p className="text-[11px] font-semibold text-gray-400">
+                            {it.variant || it.pack || (qty > 1 ? `Qty: ${qty}` : '1 unit')}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className={`text-xs font-bold text-gray-900 ${!isChecked ? 'line-through text-gray-400' : ''}`}>
-                          {it.name}
-                        </p>
-                        <p className="text-[11px] font-semibold text-gray-400">
-                          {it.variant || it.weight || '1 unit'}
-                        </p>
-                      </div>
-                    </div>
 
-                    <span className={`text-xs font-extrabold text-gray-900 shrink-0 ${!isChecked ? 'line-through text-gray-400' : ''}`}>
-                      ₹{it.price}
-                    </span>
-                  </div>
-                );
-              })}
+                      <span className={`text-xs font-extrabold text-gray-900 shrink-0 ${!isChecked ? 'line-through text-gray-400' : ''}`}>
+                        ₹{price * qty}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
             </div>
 
             {/* Price Breakdown */}
@@ -391,7 +457,7 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
               </div>
               <div className="flex justify-between text-gray-600 font-semibold">
                 <span>Delivery fee</span>
-                <span className="font-extrabold text-[#0A7C47]">FREE</span>
+                <span className="font-extrabold text-[#0A7C47]">{deliveryFee > 0 ? `₹${deliveryFee}` : 'FREE'}</span>
               </div>
               <div className="flex justify-between text-sm font-extrabold text-gray-900 pt-1 border-t border-gray-100">
                 <span>To collect / paid</span>
@@ -438,6 +504,53 @@ export default function OrderDetailsModal({ order, onClose, onSuccess }) {
               >
                 Reject
               </button>
+            </div>
+
+            {/* Partner Assignment in Payment Verification Section */}
+            <div className="mt-4 pt-3 border-t border-gray-100 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-800">
+                  Assign Delivery Partner (On Duty only):
+                </span>
+                {activeOrderData.deliveryAcceptanceStatus === 'ACCEPTED' && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Accepted
+                  </span>
+                )}
+                {activeOrderData.deliveryAcceptanceStatus === 'REJECTED' && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200">
+                    Rejected
+                  </span>
+                )}
+                {activeOrderData.deliveryAcceptanceStatus === 'PENDING' && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200 animate-pulse">
+                    Pending Acceptance
+                  </span>
+                )}
+              </div>
+
+              <select
+                disabled={assigningPartner || activeOrderData.status === 'DELIVERED'}
+                value={activeOrderData.assignedPartnerId || ''}
+                onChange={(e) => handleAssignPartnerModal(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:border-emerald-600 focus:bg-white cursor-pointer shadow-2xs"
+              >
+                <option value="">{activeOrderData.assignedPartnerId ? 'Re-assign partner...' : 'Select on-duty partner...'}</option>
+                {partners.map((p) => {
+                  const isOffDuty = p.isOnDuty === false || p.isActive === false;
+                  return (
+                    <option key={p.id} value={p.id} disabled={isOffDuty}>
+                      {p.name} · {p.mobile || p.phone || ''} {isOffDuty ? '(OFF DUTY)' : '(ON DUTY)'}
+                    </option>
+                  );
+                })}
+              </select>
+
+              {activeOrderData.deliveryBoyName && (
+                <p className="text-[11px] text-gray-500 font-medium">
+                  Assigned to <span className="font-bold text-gray-800">{activeOrderData.deliveryBoyName}</span> ({activeOrderData.deliveryBoyPhone || 'Phone unavailable'})
+                </p>
+              )}
             </div>
           </div>
 

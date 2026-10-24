@@ -21,8 +21,8 @@ import {
   Menu,
   X
 } from 'lucide-react';
-import { auth, db } from '../config/firebase';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { auth } from '../config/firebase';
+import { useBadges } from '../context/BadgeContext';
 
 const NAV_GROUPS = [
   {
@@ -34,17 +34,17 @@ const NAV_GROUPS = [
   {
     heading: 'OPERATIONS',
     items: [
-      { to: '/orders', icon: ShoppingBag, label: 'Orders', badge: '4', badgeColor: 'red' },
+      { to: '/orders', icon: ShoppingBag, label: 'Orders', badgeType: 'orders', badgeColor: 'red' },
       { to: '/deliveries', aliases: ['/delivery-partners'], icon: Truck, label: 'Deliveries' },
-      { to: '/payments', aliases: ['/accounts'], icon: CreditCard, label: 'Payments', badge: '13', badgeColor: 'amber' },
-      { to: '/refunds', icon: RotateCcw, label: 'Refunds', badge: '2', badgeColor: 'amber' },
-      { to: '/issues', icon: AlertCircle, label: 'Issues', badge: '2', badgeColor: 'red' },
+      { to: '/payments', aliases: ['/accounts'], icon: CreditCard, label: 'Payments', badgeType: 'payments', badgeColor: 'amber' },
+      { to: '/refunds', icon: RotateCcw, label: 'Refunds', badgeType: 'refunds', badgeColor: 'amber' },
+      { to: '/issues', icon: AlertCircle, label: 'Issues', badgeType: 'issues', badgeColor: 'red' },
     ],
   },
   {
     heading: 'CATALOGUE',
     items: [
-      { to: '/products', icon: Package, label: 'Products', badge: '3', badgeColor: 'gray' },
+      { to: '/products', icon: Package, label: 'Products', badgeType: 'products', badgeColor: 'gray' },
       { to: '/categories', icon: Layers, label: 'Categories' },
       { to: '/brands', icon: Tag, label: 'Brands' },
     ],
@@ -53,7 +53,7 @@ const NAV_GROUPS = [
     heading: 'CUSTOMERS',
     items: [
       { to: '/customers', icon: Users, label: 'Customers' },
-      { to: '/ratings', aliases: ['/feedback'], icon: Star, label: 'Ratings', dot: true },
+      { to: '/ratings', aliases: ['/feedback'], icon: Star, label: 'Ratings' },
       { to: '/ms-club', icon: Crown, label: 'MS Club' },
     ],
   },
@@ -73,82 +73,14 @@ const NAV_GROUPS = [
   {
     bottom: true,
     items: [
-      { to: '/settings', icon: SettingsIcon, label: 'Settings', dot: true },
+      { to: '/settings', icon: SettingsIcon, label: 'Settings' },
     ],
   },
 ];
 
 export default function Navbar({ mobileOpen = false, onCloseMobile = () => {} }) {
   const { pathname } = useLocation();
-  const [badgeCounts, setBadgeCounts] = useState({
-    orders: 4,
-    payments: 13,
-    refunds: 2,
-    issues: 2,
-    products: 3,
-  });
-
-  // Real-time badge counters from Firestore
-  useEffect(() => {
-    try {
-      // 1. Pending orders
-      const unsubOrders = onSnapshot(
-        query(collection(db, 'orders'), where('status', 'in', ['ORDER_PLACED', 'PENDING_CONFIRMATION'])),
-        (snap) => {
-          if (!snap.empty) setBadgeCounts((prev) => ({ ...prev, orders: snap.size }));
-        },
-        () => {}
-      );
-
-      // 2. Pending UPI payments
-      const unsubPayments = onSnapshot(
-        query(collection(db, 'orders'), where('paymentMethod', '==', 'UPI_MANUAL'), where('paymentStatus', '==', 'PENDING')),
-        (snap) => {
-          if (!snap.empty) setBadgeCounts((prev) => ({ ...prev, payments: snap.size }));
-        },
-        () => {}
-      );
-
-      // 3. Pending refunds
-      const unsubRefunds = onSnapshot(
-        query(collection(db, 'refunds'), where('status', '==', 'PENDING')),
-        (snap) => {
-          if (!snap.empty) setBadgeCounts((prev) => ({ ...prev, refunds: snap.size }));
-        },
-        () => {}
-      );
-
-      // 4. Open issues
-      const unsubIssues = onSnapshot(
-        query(collection(db, 'issues'), where('status', '==', 'OPEN')),
-        (snap) => {
-          if (!snap.empty) setBadgeCounts((prev) => ({ ...prev, issues: snap.size }));
-        },
-        () => {}
-      );
-
-      // 5. Low stock products
-      const unsubProducts = onSnapshot(
-        collection(db, 'products'),
-        (snap) => {
-          const low = snap.docs.filter((d) => {
-            const p = d.data();
-            return (p.stock !== undefined && p.stock <= 10) || (p.variants && p.variants.some((v) => v.stock <= 10));
-          });
-          if (low.length > 0) setBadgeCounts((prev) => ({ ...prev, products: low.length }));
-        },
-        () => {}
-      );
-
-      return () => {
-        unsubOrders();
-        unsubPayments();
-        unsubRefunds();
-        unsubIssues();
-        unsubProducts();
-      };
-    } catch (_) {}
-  }, []);
+  const { counts: badgeCounts } = useBadges();
 
   const isActive = (item) => {
     if (item.to === '/') {
@@ -160,16 +92,14 @@ export default function Navbar({ mobileOpen = false, onCloseMobile = () => {} })
   };
 
   const renderBadge = (item) => {
-    if (item.dot) {
-      return <span className="w-1.5 h-1.5 rounded-full bg-[#EF4444] shrink-0" />;
-    }
-    let val = item.badge;
-    if (item.to === '/orders') val = badgeCounts.orders;
-    if (item.to === '/payments') val = badgeCounts.payments;
-    if (item.to === '/refunds') val = badgeCounts.refunds;
-    if (item.to === '/issues') val = badgeCounts.issues;
-    if (item.to === '/products') val = badgeCounts.products;
-    if (!val) return null;
+    let val = 0;
+    if (item.badgeType === 'orders' || item.to === '/orders') val = badgeCounts.orders;
+    else if (item.badgeType === 'payments' || item.to === '/payments') val = badgeCounts.payments;
+    else if (item.badgeType === 'refunds' || item.to === '/refunds') val = badgeCounts.refunds;
+    else if (item.badgeType === 'issues' || item.to === '/issues') val = badgeCounts.issues;
+    else if (item.badgeType === 'products' || item.to === '/products') val = badgeCounts.products;
+
+    if (!val || val <= 0) return null;
 
     if (item.badgeColor === 'red') {
       return (
@@ -210,17 +140,16 @@ export default function Navbar({ mobileOpen = false, onCloseMobile = () => {} })
       >
         {/* Brand Header */}
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2.5">
+          <Link to="/" className="flex items-center gap-2 group">
             <img
-              src="/branding/ms-traders-symbol-small-colour.svg"
+              src="/branding/ms-traders-horizontal-colour.svg"
               alt="MS Traders"
-              className="w-8 h-8 object-contain shrink-0"
+              className="h-7 w-auto object-contain shrink-0 group-hover:opacity-90 transition-opacity"
             />
-            <div>
-              <p className="font-extrabold text-sm text-gray-900 leading-tight tracking-tight">MS Traders</p>
-              <p className="text-[11px] text-gray-400 font-medium leading-tight">Store admin</p>
-            </div>
-          </div>
+            <span className="text-[9px] font-bold uppercase tracking-wider text-[#0A7C47] bg-[#E6F4EA] px-1.5 py-0.5 rounded border border-[#0A7C47]/20 shrink-0">
+              Admin
+            </span>
+          </Link>
           <button
             onClick={onCloseMobile}
             className="md:hidden p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"

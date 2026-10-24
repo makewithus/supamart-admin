@@ -8,144 +8,10 @@ import OfferForm from '../components/OfferForm';
 import { apiDel, apiPut } from '../services/api';
 import toast from 'react-hot-toast';
 
-const DEFAULT_SCREENSHOT_COUPONS = [
-  {
-    id: 'c-welcome50',
-    code: 'WELCOME50',
-    discount: '₹50 off',
-    kind: 'FLAT',
-    value: 50,
-    conditions: 'Min ₹199 · first order only',
-    minValue: 199,
-    firstOrderOnly: true,
-    used: 12,
-    validUntil: '19 Oct 2027',
-    validTo: 1823904000000,
-    isActive: true,
-  },
-  {
-    id: 'c-firstorder',
-    code: 'FIRSTORDER',
-    discount: '₹100 off',
-    kind: 'FLAT',
-    value: 100,
-    conditions: 'Min ₹500 · first order only',
-    minValue: 500,
-    firstOrderOnly: true,
-    used: 3,
-    validUntil: '19 Oct 2027',
-    validTo: 1823904000000,
-    isActive: true,
-  },
-  {
-    id: 'c-fresh20',
-    code: 'FRESH20',
-    discount: '₹20 off',
-    kind: 'FLAT',
-    value: 20,
-    conditions: 'Min ₹149 · vegetables',
-    minValue: 149,
-    scope: 'CATEGORY',
-    used: 9,
-    validUntil: '19 Oct 2027',
-    validTo: 1823904000000,
-    isActive: true,
-  },
-  {
-    id: 'c-msclub10',
-    code: 'MSCLUB10',
-    discount: '10% off',
-    kind: 'PERCENT',
-    value: 10,
-    maxDiscount: 60,
-    conditions: 'Max ₹60 · MS Club members',
-    used: 1,
-    validUntil: '19 Oct 2027',
-    validTo: 1823904000000,
-    isActive: true,
-  },
-  {
-    id: 'c-bulk100',
-    code: 'BULK100',
-    discount: '₹100 off',
-    kind: 'FLAT',
-    value: 100,
-    minValue: 999,
-    conditions: 'Min ₹999',
-    used: 2,
-    validUntil: '19 Oct 2027',
-    validTo: 1823904000000,
-    isActive: true,
-  },
-  {
-    id: 'c-detergent20',
-    code: 'DETERGENT20',
-    discount: '20% off',
-    kind: 'PERCENT',
-    value: 20,
-    maxDiscount: 100,
-    conditions: 'Max ₹100 · detergents',
-    used: 0,
-    validUntil: '23 Jan 2027',
-    isAmberDate: true,
-    validTo: 1799798400000,
-    isActive: true,
-  },
-  {
-    id: 'c-tea15',
-    code: 'TEA15',
-    discount: '15% off',
-    kind: 'PERCENT',
-    value: 15,
-    maxDiscount: 80,
-    conditions: 'Max ₹80 · tea',
-    used: 0,
-    validUntil: '23 Jan 2027',
-    isAmberDate: true,
-    validTo: 1799798400000,
-    isActive: true,
-  },
-  {
-    id: 'c-flat10off',
-    code: 'FLAT10OFF',
-    discount: '₹10 off',
-    kind: 'FLAT',
-    value: 10,
-    minValue: 100,
-    conditions: 'Min ₹100',
-    used: 6,
-    validUntil: '19 Oct 2027',
-    validTo: 1823904000000,
-    isActive: true,
-  },
-];
-
-const DEFAULT_BANNERS = [
-  {
-    id: 'banner-1',
-    title: 'Kerala Piravi Special Sale',
-    subtitle: 'Flat 20% off on all fresh fruits & daily groceries',
-    image: '/branding/ms-traders-horizontal-colour.svg',
-    target: 'Vegetables & Fruits',
-    isActive: true,
-    clicks: 142,
-  },
-  {
-    id: 'banner-2',
-    title: 'MS Club Member Exclusives',
-    subtitle: 'Zero delivery fees on all orders above ₹149',
-    image: '/branding/ms-traders-symbol-small-colour.svg',
-    target: 'MS Club Membership',
-    isActive: true,
-    clicks: 89,
-  },
-];
-
 export default function Offers() {
   const [activeTab, setActiveTab] = useState('coupons'); // 'coupons' | 'banners'
-  const [firestoreOffers, setFirestoreOffers] = useState([]);
-  const [localCoupons, setLocalCoupons] = useState(DEFAULT_SCREENSHOT_COUPONS);
-  const [banners, setBanners] = useState(DEFAULT_BANNERS);
+  const [offers, setOffers] = useState([]);
+  const [banners, setBanners] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -155,34 +21,41 @@ export default function Offers() {
 
   useEffect(() => {
     try {
-      const q = query(collection(db, 'offers'), orderBy('createdAt', 'desc'));
-      const unsub = onSnapshot(
-        q,
+      const qOffers = query(collection(db, 'offers'), orderBy('createdAt', 'desc'));
+      const unsubOffers = onSnapshot(
+        qOffers,
         (snap) => {
-          if (!snap.empty) {
-            setFirestoreOffers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-          }
+          setOffers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
           setLoading(false);
         },
         (err) => {
-          console.error(err);
+          console.error('Offers fetch error:', err);
           setLoading(false);
         }
       );
-      return () => unsub();
+
+      const qBanners = collection(db, 'banners');
+      const unsubBanners = onSnapshot(
+        qBanners,
+        (snap) => {
+          setBanners(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        },
+        (err) => {
+          console.error('Banners fetch error:', err);
+        }
+      );
+
+      return () => {
+        unsubOffers();
+        unsubBanners();
+      };
     } catch (_) {
       setLoading(false);
     }
   }, []);
 
-  // Merge live Firestore offers with design coupons
   const displayCoupons = useMemo(() => {
-    if (firestoreOffers.length === 0) {
-      return localCoupons;
-    }
-
-    // Format firestore offers
-    const mappedFirestore = firestoreOffers.map((o) => {
+    return offers.map((o) => {
       const discountText =
         o.kind === 'PERCENT' ? `${o.value}% off` : `₹${o.value} off`;
       let cond = '';
@@ -197,7 +70,7 @@ export default function Offers() {
             month: 'short',
             year: 'numeric',
           })
-        : '19 Oct 2027';
+        : 'Never expires';
 
       return {
         id: o.id,
@@ -211,38 +84,30 @@ export default function Offers() {
         raw: o,
       };
     });
-
-    // Merge ensuring all items from default set are retained or updated
-    const liveCodes = new Set(mappedFirestore.map((c) => c.code));
-    const leftovers = localCoupons.filter((c) => !liveCodes.has(c.code));
-    return [...mappedFirestore, ...leftovers];
-  }, [firestoreOffers, localCoupons]);
+  }, [offers]);
 
   const handleToggleActive = async (coupon, e) => {
     e.stopPropagation();
     const nextState = !coupon.isActive;
 
-    // Update local state immediately for instant smooth response
-    setLocalCoupons((prev) =>
-      prev.map((c) => (c.code === coupon.code ? { ...c, isActive: nextState } : c))
-    );
-
-    if (coupon.raw && coupon.raw.id) {
-      try {
-        await apiPut(`/offers/${coupon.raw.id}`, { isActive: nextState });
-      } catch (err) {
-        console.error('Failed to sync toggle to server:', err);
-      }
+    try {
+      await apiPut(`/offers/${coupon.id}`, { isActive: nextState });
+      toast.success(`Coupon ${coupon.code} is now ${nextState ? 'Active' : 'Inactive'}.`);
+    } catch (err) {
+      console.error('Failed to sync toggle to server:', err);
+      toast.error('Failed to update coupon status');
     }
-
-    toast.success(`Coupon ${coupon.code} is now ${nextState ? 'Active' : 'Inactive'}.`);
   };
 
-  const handleToggleBanner = (bannerId) => {
-    setBanners((prev) =>
-      prev.map((b) => (b.id === bannerId ? { ...b, isActive: !b.isActive } : b))
-    );
-    toast.success('Banner visibility updated.');
+  const handleToggleBanner = async (banner) => {
+    const nextState = !banner.isActive;
+    try {
+      await apiPut(`/banners/${banner.id}`, { isActive: nextState });
+      toast.success('Banner visibility updated.');
+    } catch (err) {
+      console.error('Failed to update banner:', err);
+      toast.error('Failed to update banner');
+    }
   };
 
   const handleCopyCode = (code, e) => {
@@ -348,76 +213,87 @@ export default function Offers() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-xs">
-                {displayCoupons.map((coupon) => (
-                  <tr
-                    key={coupon.id || coupon.code}
-                    onClick={() => handleRowClick(coupon)}
-                    className="hover:bg-gray-50/60 transition-colors cursor-pointer group"
-                  >
-                    {/* CODE */}
-                    <td className="py-3.5 px-6">
-                      <div className="flex items-center gap-1.5">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md border border-dashed border-[#86EFAC] bg-[#F0FDF4] text-[#166534] font-mono text-xs font-bold tracking-wide">
-                          {coupon.code}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => handleCopyCode(coupon.code, e)}
-                          title="Copy code"
-                          className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-700 transition-opacity rounded"
-                        >
-                          {copiedCode === coupon.code ? (
-                            <Check size={12} className="text-emerald-600" />
-                          ) : (
-                            <Copy size={12} />
-                          )}
-                        </button>
+                {displayCoupons.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 px-6 text-center text-gray-400">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <p className="font-semibold text-gray-500 text-sm">No coupons found</p>
+                        <p className="text-xs text-gray-400">Click &ldquo;New coupon&rdquo; to create a discount coupon for your customers.</p>
                       </div>
                     </td>
-
-                    {/* DISCOUNT */}
-                    <td className="py-3.5 px-4 font-bold text-gray-900">
-                      {coupon.discount}
-                    </td>
-
-                    {/* CONDITIONS */}
-                    <td className="py-3.5 px-4 text-gray-500 font-normal">
-                      {coupon.conditions}
-                    </td>
-
-                    {/* USED */}
-                    <td className="py-3.5 px-4 text-gray-700 font-medium">
-                      {coupon.used}
-                    </td>
-
-                    {/* VALID UNTIL */}
-                    <td
-                      className={`py-3.5 px-4 font-medium ${
-                        coupon.isAmberDate ? 'text-[#D97706]' : 'text-gray-600'
-                      }`}
-                    >
-                      {coupon.validUntil}
-                    </td>
-
-                    {/* ACTIVE TOGGLE */}
-                    <td className="py-3.5 px-6 text-right" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleActive(coupon, e)}
-                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          coupon.isActive ? 'bg-[#0a7c47]' : 'bg-gray-300'
-                        }`}
-                        title={coupon.isActive ? 'Deactivate coupon' : 'Activate coupon'}
-                      >
-                        <span
-                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                            coupon.isActive ? 'translate-x-4' : 'translate-x-0'
-                          }`}
-                        />
-                      </button>
-                    </td>
                   </tr>
-                ))}
+                ) : (
+                  displayCoupons.map((coupon) => (
+                    <tr
+                      key={coupon.id || coupon.code}
+                      onClick={() => handleRowClick(coupon)}
+                      className="hover:bg-gray-50/60 transition-colors cursor-pointer group"
+                    >
+                      {/* CODE */}
+                      <td className="py-3.5 px-6">
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md border border-dashed border-[#86EFAC] bg-[#F0FDF4] text-[#166534] font-mono text-xs font-bold tracking-wide">
+                            {coupon.code}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyCode(coupon.code, e)}
+                            title="Copy code"
+                            className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-700 transition-opacity rounded"
+                          >
+                            {copiedCode === coupon.code ? (
+                              <Check size={12} className="text-emerald-600" />
+                            ) : (
+                              <Copy size={12} />
+                            )}
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* DISCOUNT */}
+                      <td className="py-3.5 px-4 font-bold text-gray-900">
+                        {coupon.discount}
+                      </td>
+
+                      {/* CONDITIONS */}
+                      <td className="py-3.5 px-4 text-gray-500 font-normal">
+                        {coupon.conditions}
+                      </td>
+
+                      {/* USED */}
+                      <td className="py-3.5 px-4 text-gray-700 font-medium">
+                        {coupon.used}
+                      </td>
+
+                      {/* VALID UNTIL */}
+                      <td
+                        className={`py-3.5 px-4 font-medium ${
+                          coupon.isAmberDate ? 'text-[#D97706]' : 'text-gray-600'
+                        }`}
+                      >
+                        {coupon.validUntil}
+                      </td>
+
+                      {/* ACTIVE TOGGLE */}
+                      <td className="py-3.5 px-6 text-right" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleActive(coupon, e)}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                            coupon.isActive ? 'bg-[#0a7c47]' : 'bg-gray-300'
+                          }`}
+                          title={coupon.isActive ? 'Deactivate coupon' : 'Activate coupon'}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                              coupon.isActive ? 'translate-x-4' : 'translate-x-0'
+                            }`}
+                          />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -440,46 +316,56 @@ export default function Offers() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {banners.map((b) => (
-              <div
-                key={b.id}
-                className="rounded-2xl border border-gray-200/80 p-4 flex flex-col justify-between hover:border-emerald-600/30 transition-all bg-[#FAFBF9]"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md">
-                      Target: {b.target}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleBanner(b.id)}
-                      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200 ${
-                        b.isActive ? 'bg-[#056B38] justify-end' : 'bg-gray-200 justify-start'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-2xs transition duration-200 ${
-                          b.isActive ? 'translate-x-4' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                  <h3 className="text-sm font-bold text-gray-900">{b.title}</h3>
-                  <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{b.subtitle}</p>
-                </div>
-
-                <div className="flex items-center justify-between pt-4 mt-4 border-t border-gray-200/60 text-xs text-gray-400">
-                  <span>{b.clicks} user interactions</span>
-                  <button
-                    onClick={() => toast.success('Banner details')}
-                    className="text-xs font-semibold text-[#0A7C47] hover:underline inline-flex items-center gap-1"
-                  >
-                    <span>Configure</span>
-                    <ExternalLink size={12} />
-                  </button>
+            {banners.length === 0 ? (
+              <div className="py-12 text-center text-gray-400 col-span-2">
+                <div className="flex flex-col items-center justify-center gap-2">
+                  <ImageIcon size={32} className="text-gray-300 stroke-[1.5]" />
+                  <p className="font-semibold text-gray-500 text-sm">No banners created yet</p>
+                  <p className="text-xs text-gray-400">Add marketing banners to highlight on the customer app home screen.</p>
                 </div>
               </div>
-            ))}
+            ) : (
+              banners.map((b) => (
+                <div
+                  key={b.id}
+                  className="rounded-2xl border border-gray-200/80 p-4 flex flex-col justify-between hover:border-emerald-600/30 transition-all bg-[#FAFBF9]"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md">
+                        Target: {b.target || b.targetType || 'Home'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleBanner(b)}
+                        className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200 ${
+                          b.isActive ? 'bg-[#056B38] justify-end' : 'bg-gray-200 justify-start'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-2xs transition duration-200 ${
+                            b.isActive ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    <h3 className="text-sm font-bold text-gray-900">{b.title}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{b.subtitle}</p>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 mt-4 border-t border-gray-200/60 text-xs text-gray-400">
+                    <span>{b.clicks || 0} user interactions</span>
+                    <button
+                      onClick={() => toast.success('Banner details')}
+                      className="text-xs font-semibold text-[#0A7C47] hover:underline inline-flex items-center gap-1"
+                    >
+                      <span>Configure</span>
+                      <ExternalLink size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}

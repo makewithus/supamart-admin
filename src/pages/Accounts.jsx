@@ -63,117 +63,47 @@ export default function Accounts() {
     return upiOrders.filter((o) => o.paymentStatus === 'FAILED');
   }, [upiOrders]);
 
+  const startOfToday = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }, []);
+
   // Aggregate stats
   const waitingAmount = toVerifyList.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
-  const verifiedTodayAmount = verifiedList.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+  const verifiedTodayOrders = useMemo(() => {
+    return verifiedList.filter((o) => (o.updatedAt || o.createdAt || 0) >= startOfToday);
+  }, [verifiedList, startOfToday]);
+  const verifiedTodayAmount = verifiedTodayOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
 
-  // If live data has few items, blend in sample records matching designer screenshot so display is vibrant
+  const oldestWaitingOrder = useMemo(() => {
+    if (toVerifyList.length === 0) return null;
+    return [...toVerifyList].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))[0];
+  }, [toVerifyList]);
+
+  const codOrders = useMemo(() => {
+    return orders.filter((o) => o.paymentMethod === 'COD' || o.paymentMethod === 'CASH_ON_DELIVERY');
+  }, [orders]);
+
+  const cashToCollectAmount = useMemo(() => {
+    return codOrders
+      .filter((o) => (o.status === 'DELIVERED' || o.status === 'OUT_FOR_DELIVERY') && o.paymentStatus !== 'PAID')
+      .reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+  }, [codOrders]);
+
   const displayedOrders = useMemo(() => {
-    let list = [];
-    if (activeTab === 'TO_VERIFY') list = toVerifyList;
-    else if (activeTab === 'VERIFIED') list = verifiedList;
-    else if (activeTab === 'REJECTED') list = rejectedList;
-    else list = upiOrders;
-
-    // Fallback showcase items from screenshot when live DB is small
-    const sampleShowcase = [
-      {
-        id: 'mock-1031',
-        orderNo: '1031',
-        userName: 'Krrish Singhal',
-        userEmail: 'krrishsinghal62@gmail.com',
-        total: 412,
-        upiRef: '429815673301',
-        paidWith: 'Google Pay',
-        waitingText: '4 min',
-        isWaitingShort: true,
-        paymentStatus: 'AWAITING_CONFIRMATION',
-        status: 'ORDER_PLACED',
-      },
-      {
-        id: 'mock-1028',
-        orderNo: '1028',
-        userName: 'Mohammed Sherhan',
-        userEmail: 'sheroomsherhan@gmail.com',
-        total: 536,
-        upiRef: '429810824466',
-        paidWith: 'PhonePe',
-        waitingText: '18 min',
-        isWaitingShort: true,
-        paymentStatus: 'AWAITING_CONFIRMATION',
-        status: 'ORDER_PLACED',
-      },
-      {
-        id: 'mock-1018',
-        orderNo: '1018',
-        userName: 'Krrish Singhal',
-        userEmail: 'dev@mwus.in',
-        total: 2139,
-        upiRef: null, // Not entered
-        paidWith: 'Google Pay',
-        waitingText: '2 days',
-        isWaitingShort: false,
-        paymentStatus: 'AWAITING_CONFIRMATION',
-        status: 'ORDER_PLACED',
-      },
-      {
-        id: 'mock-1017',
-        orderNo: '1017',
-        userName: 'Krrish Singhal',
-        userEmail: 'dev@mwus.in',
-        total: 144,
-        upiRef: '427733019812',
-        paidWith: 'Google Pay',
-        waitingText: '2 days',
-        isWaitingShort: false,
-        paymentStatus: 'AWAITING_CONFIRMATION',
-        status: 'ORDER_PLACED',
-      },
-      {
-        id: 'mock-1020',
-        orderNo: '1020',
-        userName: 'Krrish Singhal',
-        userEmail: 'dev@mwus.in',
-        total: 286,
-        upiRef: '426500118745',
-        paidWith: 'Paytm',
-        waitingText: '36 days',
-        isWaitingShort: false,
-        paymentStatus: 'AWAITING_CONFIRMATION',
-        status: 'DELIVERED', // closed
-      },
-      {
-        id: 'mock-1019',
-        orderNo: '1019',
-        userName: 'Krrish Singhal',
-        userEmail: 'dev@mwus.in',
-        total: 157,
-        upiRef: '426499873320',
-        paidWith: 'Google Pay',
-        waitingText: '37 days',
-        isWaitingShort: false,
-        paymentStatus: 'AWAITING_CONFIRMATION',
-        status: 'DELIVERED', // closed
-      },
-    ];
-
-    if (list.length === 0) {
-      if (activeTab === 'TO_VERIFY') return sampleShowcase;
-      if (activeTab === 'ALL') return sampleShowcase;
-    }
-    return list;
+    if (activeTab === 'TO_VERIFY') return toVerifyList;
+    if (activeTab === 'VERIFIED') return verifiedList;
+    if (activeTab === 'REJECTED') return rejectedList;
+    return upiOrders;
   }, [activeTab, toVerifyList, verifiedList, rejectedList, upiOrders]);
 
   const handleVerify = async (order, e) => {
     e?.stopPropagation();
-    if (order.id?.startsWith('mock-')) {
-      toast.success(`Payment verified for Order #${order.orderNo}`);
-      return;
-    }
     setActionLoading(true);
     try {
       await apiPatch(`/orders/${order.id}/mark-paid`);
-      toast.success(`Payment verified for Order #${order.orderNo}`);
+      toast.success(`Payment verified for Order #${order.orderNo || order.id?.slice(-4)}`);
     } catch (err) {
       toast.error(err.message || 'Failed to verify payment');
     } finally {
@@ -190,18 +120,13 @@ export default function Accounts() {
 
   const handleConfirmReject = async () => {
     if (!rejectOrder) return;
-    if (rejectOrder.id?.startsWith('mock-')) {
-      toast.success(`Payment rejected for Order #${rejectOrder.orderNo}`);
-      setRejectOrder(null);
-      return;
-    }
     setActionLoading(true);
     try {
       await apiPatch(`/orders/${rejectOrder.id}/reject-payment`, {
         reason: rejectReason,
         customReason: customRejectReason.trim(),
       });
-      toast.success(`Payment rejected for Order #${rejectOrder.orderNo}`);
+      toast.success(`Payment rejected for Order #${rejectOrder.orderNo || rejectOrder.id?.slice(-4)}`);
       setRejectOrder(null);
     } catch (err) {
       toast.error(err.message || 'Failed to reject payment');
@@ -215,10 +140,10 @@ export default function Accounts() {
     setIsModalOpen(true);
   };
 
-  const toVerifyCount = Math.max(toVerifyList.length, 13);
-  const verifiedCount = Math.max(verifiedList.length, 18);
-  const rejectedCount = Math.max(rejectedList.length, 1);
-  const allCount = toVerifyCount + verifiedCount + rejectedCount;
+  const toVerifyCount = toVerifyList.length;
+  const verifiedCount = verifiedList.length;
+  const rejectedCount = rejectedList.length;
+  const allCount = upiOrders.length;
 
   return (
     <div className="p-6 lg:p-8 space-y-6 w-full animate-fade-in">
@@ -238,21 +163,21 @@ export default function Accounts() {
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs">
           <p className="text-xs font-semibold text-gray-500">Waiting to verify</p>
           <p className="text-2xl font-black text-gray-900 tracking-tight mt-1.5">
-            ₹{waitingAmount > 0 ? waitingAmount.toLocaleString('en-IN') : '4,862'}
+            ₹{waitingAmount.toLocaleString('en-IN')}
           </p>
           <p className="text-xs text-gray-400 font-medium mt-1">
-            {toVerifyCount} payments
+            {toVerifyCount} {toVerifyCount === 1 ? 'payment' : 'payments'}
           </p>
         </div>
 
         {/* Oldest waiting */}
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs">
           <p className="text-xs font-semibold text-gray-500">Oldest waiting</p>
-          <p className="text-2xl font-black text-[#E03137] tracking-tight mt-1.5">
-            37 days
+          <p className={`text-2xl font-black tracking-tight mt-1.5 ${oldestWaitingOrder ? 'text-[#E03137]' : 'text-gray-400'}`}>
+            {oldestWaitingOrder ? formatWaiting(oldestWaitingOrder.createdAt) : '—'}
           </p>
-          <p className="text-xs text-gray-400 font-medium mt-1">
-            Order #1020 · order closed
+          <p className="text-xs text-gray-400 font-medium mt-1 truncate">
+            {oldestWaitingOrder ? `Order #${oldestWaitingOrder.orderNo || oldestWaitingOrder.id?.slice(-4)} · awaiting` : 'All caught up'}
           </p>
         </div>
 
@@ -260,10 +185,10 @@ export default function Accounts() {
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs">
           <p className="text-xs font-semibold text-gray-500">Verified today</p>
           <p className="text-2xl font-black text-[#0E6C3B] tracking-tight mt-1.5">
-            ₹{verifiedTodayAmount > 0 ? verifiedTodayAmount.toLocaleString('en-IN') : '6,120'}
+            ₹{verifiedTodayAmount.toLocaleString('en-IN')}
           </p>
           <p className="text-xs text-gray-400 font-medium mt-1">
-            {verifiedCount} payments
+            {verifiedTodayOrders.length} {verifiedTodayOrders.length === 1 ? 'payment' : 'payments'}
           </p>
         </div>
 
@@ -271,10 +196,10 @@ export default function Accounts() {
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs">
           <p className="text-xs font-semibold text-gray-500">Cash to collect</p>
           <p className="text-2xl font-black text-gray-900 tracking-tight mt-1.5">
-            ₹587
+            ₹{cashToCollectAmount.toLocaleString('en-IN')}
           </p>
           <p className="text-xs text-gray-400 font-medium mt-1">
-            From 2 partners
+            From cash on delivery
           </p>
         </div>
       </div>
@@ -340,37 +265,50 @@ export default function Accounts() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {displayedOrders.map((o) => {
-                const isClosed = o.status === 'DELIVERED' || o.status === 'CANCELLED';
-                const utr = o.upiRef || o.paymentDetails?.utr || o.paymentDetails?.transactionId;
-                const paidWith = o.paidWith || o.paymentDetails?.app || 'Google Pay';
-                const waiting = o.waitingText || formatWaiting(o.createdAt);
-                const isShortWait = o.isWaitingShort ?? (waiting.includes('min') || waiting.includes('h'));
-                const isPendingVerification = o.paymentStatus === 'AWAITING_CONFIRMATION' || o.paymentStatus === 'PENDING';
+              {displayedOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-400 font-medium">
+                    {activeTab === 'TO_VERIFY'
+                      ? 'No UPI payments waiting for verification. All clear!'
+                      : activeTab === 'VERIFIED'
+                      ? 'No verified payments found.'
+                      : activeTab === 'REJECTED'
+                      ? 'No rejected payments found.'
+                      : 'No UPI transactions found.'}
+                  </td>
+                </tr>
+              ) : (
+                displayedOrders.map((o) => {
+                  const isClosed = o.status === 'DELIVERED' || o.status === 'CANCELLED';
+                  const utr = o.upiRef || o.paymentDetails?.utr || o.paymentDetails?.transactionId;
+                  const paidWith = o.paidWith || o.paymentDetails?.app || o.paymentMethod || 'UPI';
+                  const waiting = o.waitingText || formatWaiting(o.createdAt);
+                  const isShortWait = o.isWaitingShort ?? (waiting.includes('min') || waiting.includes('h'));
+                  const isPendingVerification = o.paymentStatus === 'AWAITING_CONFIRMATION' || o.paymentStatus === 'PENDING';
 
-                return (
-                  <tr
-                    key={o.id}
-                    onClick={() => handleRowClick(o)}
-                    className="hover:bg-gray-50/70 transition-colors cursor-pointer group"
-                  >
-                    {/* Order Column */}
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-gray-900 text-sm">#{o.orderNo}</span>
-                        {isClosed && (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-gray-100 text-gray-500">
-                            Order closed
-                          </span>
-                        )}
-                      </div>
-                    </td>
+                  return (
+                    <tr
+                      key={o.id}
+                      onClick={() => handleRowClick(o)}
+                      className="hover:bg-gray-50/70 transition-colors cursor-pointer group"
+                    >
+                      {/* Order Column */}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-900 text-sm">#{o.orderNo || o.id?.slice(-4)}</span>
+                          {isClosed && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-gray-100 text-gray-500">
+                              Order closed
+                            </span>
+                          )}
+                        </div>
+                      </td>
 
-                    {/* Customer Column */}
-                    <td className="px-6 py-4">
-                      <p className="font-bold text-gray-900 text-xs sm:text-sm leading-tight">{o.userName || 'Krrish Singhal'}</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5 font-normal leading-tight">{o.userEmail || o.userPhone || 'dev@mwus.in'}</p>
-                    </td>
+                      {/* Customer Column */}
+                      <td className="px-6 py-4">
+                        <p className="font-bold text-gray-900 text-xs sm:text-sm leading-tight">{o.userName || o.customerName || 'Customer'}</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5 font-normal leading-tight">{o.userEmail || o.userPhone || '—'}</p>
+                      </td>
 
                     {/* Amount Column */}
                     <td className="px-6 py-4 font-bold text-gray-900 text-sm whitespace-nowrap">
@@ -435,7 +373,7 @@ export default function Accounts() {
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

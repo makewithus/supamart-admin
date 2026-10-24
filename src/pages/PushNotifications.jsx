@@ -19,10 +19,8 @@ function formatSentDate(ms) {
 }
 
 export default function PushNotifications() {
-  const [title, setTitle] = useState('Fresh vegetables just arrived');
-  const [message, setMessage] = useState(
-    "Tomato, onion and okra at today's best prices. Order before 3 PM for the 4–6 PM slot."
-  );
+  const [title, setTitle] = useState('');
+  const [message, setMessage] = useState('');
   const [sendTo, setSendTo] = useState('ALL');
   const [when, setWhen] = useState('Send now');
   const [opens, setOpens] = useState('Home screen');

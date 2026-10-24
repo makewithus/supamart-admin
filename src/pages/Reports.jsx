@@ -44,11 +44,11 @@ export default function Reports() {
     const refundAmt = refunds.reduce((sum, r) => sum + (r.amount || 0), 0);
 
     return {
-      grossSales: gross > 0 ? gross : 104380,
-      deliveredCount: delivered.length > 0 ? delivered.length : 326,
-      totalRefundAmount: refundAmt > 0 ? refundAmt : 1240,
-      refundCount: refunds.length > 0 ? refunds.length : 7,
-      netSales: (gross > 0 ? gross : 104380) - (refundAmt > 0 ? refundAmt : 1240),
+      grossSales: gross,
+      deliveredCount: delivered.length,
+      totalRefundAmount: refundAmt,
+      refundCount: refunds.length,
+      netSales: Math.max(0, gross - refundAmt),
     };
   }, [orders, refunds]);
 
@@ -63,11 +63,7 @@ export default function Reports() {
           const rows = [
             ['Invoice No', 'Date', 'Customer Name', 'HSN Code', 'Taxable Value (INR)', 'CGST', 'SGST', 'Total Invoice Value'],
           ];
-          const list = orders.length > 0 ? orders : [
-            { orderNo: '1031', createdAt: Date.now(), userName: 'Krrish Singhal', total: 412 },
-            { orderNo: '1030', createdAt: Date.now() - 3600000, userName: 'Mohan Sharma', total: 1186 },
-          ];
-          list.forEach((o) => {
+          orders.forEach((o) => {
             const tot = o.total || 0;
             const taxable = (tot / 1.05).toFixed(2);
             const gst = ((tot - taxable) / 2).toFixed(2);
@@ -103,16 +99,9 @@ export default function Reports() {
               });
             }
           });
-          const entries = Object.entries(map);
-          if (entries.length > 0) {
-            entries.forEach(([name, d]) => {
-              rows.push([name, d.qty, d.revenue.toFixed(2)]);
-            });
-          } else {
-            rows.push(['Full Cream Milk', '64', '2176.00']);
-            rows.push(['Tomato (Local)', '41', '1435.00']);
-            rows.push(['Onion', '37', '1850.00']);
-          }
+          Object.entries(map).forEach(([name, d]) => {
+            rows.push([name, d.qty, d.revenue.toFixed(2)]);
+          });
           return rows;
         },
       },
@@ -130,13 +119,9 @@ export default function Reports() {
               o.paymentMethod || 'UPI',
               o.utr || o.paymentRef || '—',
               (o.total || 0).toFixed(2),
-              o.paymentStatus || 'COMPLETED',
+              o.paymentStatus || (o.status === 'DELIVERED' ? 'COMPLETED' : 'PENDING'),
             ]);
           });
-          if (rows.length === 1) {
-            rows.push(['#1031', '24 Oct 2026 14:18', 'UPI', '429817291039', '412.00', 'Verified']);
-            rows.push(['#1030', '24 Oct 2026 14:15', 'UPI', '429817109281', '1186.00', 'Verified']);
-          }
           return rows;
         },
       },
@@ -515,7 +500,7 @@ export default function Reports() {
                 <h1 class="brand-title">MS Traders</h1>
                 <p class="brand-sub">SUPERMARKET & FRESH GROCERIES · STORE ADMIN</p>
                 <p class="brand-address">HV76+F39, Menamkulam, Thiruvananthapuram, Kerala 695582</p>
-                <p class="brand-meta">GSTIN: 32AABCS1429B1Z8 · Support: support@mstraders.com</p>
+                <p class="brand-meta">GSTIN: 32AABCS1429B1Z8 · Support: hassanramla31@gmail.com · +91 9037655180</p>
               </div>
             </div>
 

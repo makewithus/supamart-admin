@@ -3,30 +3,29 @@ import React from 'react';
 export default function BrandMark({ reversed = false, prominent = false, layout = 'horizontal' }) {
   if (layout === 'sidebar' || layout === 'compact') {
     return (
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 flex items-center justify-center bg-[#0E6C3B]">
-          <img
-            src="/branding/ms-traders-symbol-small-colour.svg"
-            alt="MS Traders"
-            className="w-full h-full object-contain"
-          />
-        </div>
-        <div className="flex flex-col">
-          <span className="text-sm font-bold text-gray-900 leading-tight">MS Traders</span>
-          <span className="text-[11px] text-gray-400 font-medium leading-tight mt-0.5">Store admin</span>
-        </div>
+      <div className="flex items-center gap-2.5">
+        <img
+          src={`/branding/ms-traders-horizontal-${reversed ? 'reversed' : 'colour'}.svg`}
+          alt="MS Traders"
+          className="h-7 w-auto object-contain"
+        />
+        <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+          reversed
+            ? 'bg-white/10 text-emerald-200 border border-white/20'
+            : 'bg-[#E6F4EA] text-[#0A7C47] border border-[#0A7C47]/20'
+        }`}>
+          Admin
+        </span>
       </div>
     );
   }
 
   return (
-    <span className="inline-flex shrink-0 p-1.5">
+    <span className="inline-flex shrink-0 p-1.5 items-center">
       <img
         src={`/branding/ms-traders-horizontal-${reversed ? 'reversed' : 'colour'}.svg`}
         alt="MS Traders"
-        width="136"
-        height="42"
-        className={`block h-auto object-contain ${prominent ? 'w-[136px] md:w-[160px]' : 'w-[136px]'}`}
+        className={`block h-auto object-contain ${prominent ? 'w-[150px] md:w-[180px]' : 'w-[136px]'}`}
       />
     </span>
   );

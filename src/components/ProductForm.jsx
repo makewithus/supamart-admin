@@ -176,7 +176,7 @@ export default function ProductForm({ product, categories = [], brands = [], onS
         lowStockThreshold: Number(formData.lowStockAlert) || 10,
       };
 
-      if (isEdit && !product.id?.startsWith('mock-')) {
+      if (isEdit && product?.id) {
         await apiPut(`/products/${product.id}`, payload);
         toast.success('Product updated successfully!');
       } else {

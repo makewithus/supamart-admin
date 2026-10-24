@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Plus, Phone, MapPin, MessageSquare, ChevronDown, Check,
-  X, UserPlus, Clock
+  X, UserPlus, Clock, ExternalLink, Star, AlertCircle, AlertTriangle
 } from 'lucide-react';
 import { db } from '../config/firebase';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { apiPost, apiPatch } from '../services/api';
-import { formatDeliverySlot } from '../utils/orderUtils';
 import toast from 'react-hot-toast';
 
 function maskPhone(phone) {
@@ -24,6 +23,7 @@ export default function DeliveryPartners() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [trackingPartner, setTrackingPartner] = useState(null);
+  const [deliveryTab, setDeliveryTab] = useState('ALL');
 
   // New partner form fields
   const [name, setName] = useState('');
@@ -44,7 +44,6 @@ export default function DeliveryPartners() {
         },
         (err) => {
           console.error('deliveryPartners snapshot error:', err);
-          // If orderBy index fails, fallback to unordered query
           onSnapshot(collection(db, 'deliveryPartners'), (s) => {
             setRawPartners(s.docs.map((d) => ({ id: d.id, ...d.data() })));
             setLoading(false);
@@ -70,32 +69,28 @@ export default function DeliveryPartners() {
     }
   }, []);
 
-  // Map partners with live activity, counts, and status
+  // Map partners with live activity, counts, and duty status
   const partners = useMemo(() => {
     return rawPartners.map((p) => {
       const pOrders = orders.filter((o) => o.assignedPartnerId === p.id);
-      const activeOrder = pOrders.find((o) => o.status === 'OUT_FOR_DELIVERY' || o.status === 'ORDER_ACCEPTED');
+      const activeOrders = pOrders.filter((o) => o.status === 'OUT_FOR_DELIVERY' || o.status === 'ORDER_ACCEPTED' || o.status === 'PENDING_CONFIRMATION');
       const deliveredTodayCount = pOrders.filter((o) => o.status === 'DELIVERED').length;
-      const cashHeld = pOrders
-        .filter((o) => (o.paymentMethod === 'COD' || o.paymentMethod === 'CASH_ON_DELIVERY') && o.status === 'DELIVERED')
-        .reduce((sum, o) => sum + (Number(o.total) || 0), 0);
 
-      let status = 'At store';
+      let online = p.isOnDuty !== false && p.isActive !== false;
+      let status = 'On duty';
       let statusType = 'at_store';
-      let online = p.isActive !== false;
-      let subText = 'Free · ready for orders';
-      let btnAction = 'Assign order';
+      let subText = 'Available · Ready for orders';
+      let btnAction = 'Track';
 
       if (!online) {
         status = 'Off duty';
         statusType = 'off_duty';
-        subText = 'Offline';
+        subText = 'Off duty · Cannot receive orders';
         btnAction = 'Message';
-      } else if (activeOrder) {
+      } else if (activeOrders.length > 0) {
         status = 'On delivery';
         statusType = 'on_delivery';
-        const area = activeOrder.addressSnapshot?.city || activeOrder.address?.area || 'Menamkulam';
-        subText = `Order #${activeOrder.orderNo || activeOrder.id?.slice(-4)} · ${area}`;
+        subText = `${activeOrders.length} active ${activeOrders.length === 1 ? 'delivery' : 'deliveries'}`;
         btnAction = 'Track';
       }
 
@@ -110,30 +105,85 @@ export default function DeliveryPartners() {
         online,
         subText,
         delivered: deliveredTodayCount,
-        cashHeld: Math.round(cashHeld),
+        activeOrdersCount: activeOrders.length,
         onTime: deliveredTodayCount > 0 ? '100%' : '—',
         btnAction,
         currentLocation: p.currentLocation || null,
+        lastSyncedAt: p.lastSyncedAt || null,
         raw: p,
       };
     });
   }, [rawPartners, orders]);
 
-  // Orders that need a partner (Ready to dispatch)
-  const dispatchOrders = useMemo(() => {
+  // Comprehensive deliveries list for real-time tracking
+  const deliveriesList = useMemo(() => {
     return orders
-      .filter((o) => !o.assignedPartnerId && (o.status === 'PACKING' || o.status === 'ORDER_ACCEPTED' || o.status === 'ORDER_PLACED'))
-      .map((o) => ({
-        id: o.id,
-        orderNo: o.orderNo ? `#${o.orderNo}` : `#${o.id.slice(-4)}`,
-        customer: o.userName || o.addressSnapshot?.name || o.address?.name || 'Customer',
-        area: o.addressSnapshot?.city || o.address?.area || 'Menamkulam',
-        distance: '0.8 km',
-        slot: formatDeliverySlot(o.deliverySlot || o.slot),
-        instructions: o.deliveryInstructions || o.instructions || 'Leave at door · Call on arrival',
-        assignedTo: '',
-      }));
-  }, [orders]);
+      .filter((o) => o.status !== 'CANCELLED')
+      .map((o) => {
+        const orderNo = o.orderNo ? `#${o.orderNo}` : `#${o.id.slice(-4)}`;
+        const customer = o.userName || o.addressSnapshot?.name || o.address?.name || 'Customer';
+        const phone = o.userPhone || o.addressSnapshot?.phone || o.address?.phone || '';
+        const rawAddr = o.address || o.addressSnapshot;
+        const formattedAddr = typeof rawAddr === 'string'
+          ? rawAddr
+          : rawAddr?.formattedAddress || [rawAddr?.houseNo, rawAddr?.street, rawAddr?.landmark, rawAddr?.city].filter(Boolean).join(', ') || 'Address on file';
+        const instructions = o.deliveryInstructions || o.instructions || o.notes || '';
+        const items = Array.isArray(o.items) ? o.items : [];
+        const itemsSummary = items.map((it) => `${it.name} (x${it.quantity || it.qty || 1})`).join(', ');
+
+        const assignedPartner = rawPartners.find((p) => p.id === o.assignedPartnerId);
+        const partnerName = o.deliveryBoyName || assignedPartner?.name || 'Unassigned';
+        const partnerPhone = o.deliveryBoyPhone || assignedPartner?.mobile || assignedPartner?.phone || '';
+        const acceptanceStatus = o.deliveryAcceptanceStatus || (o.assignedPartnerId ? 'PENDING' : null);
+
+        const syncLocation = o.lastSyncedLocation || assignedPartner?.currentLocation || null;
+        const lastSyncedTime = o.lastSyncedAt || assignedPartner?.lastSyncedAt || null;
+
+        const delayReason = o.delayReason || o.deliveryDelay?.reason || null;
+        const newEstimatedTime = o.deliveryDelay?.newEstimatedTime || null;
+
+        const isDelivered = o.status === 'DELIVERED';
+        const isPendingConfirmation = o.status === 'PENDING_CONFIRMATION';
+        const isOutForDelivery = o.status === 'OUT_FOR_DELIVERY';
+        const isConfirmed = !!(o.confirmedAt || o.orderRating || o.rating);
+        const rating = o.orderRating || o.rating || null;
+
+        return {
+          id: o.id,
+          orderNo,
+          placed: o.placed || (o.createdAt ? new Date(o.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'),
+          itemsCount: items.length,
+          itemsSummary: itemsSummary || '1 package',
+          total: Math.round(Number(o.total || o.totalAmount) || 0),
+          customer,
+          phone,
+          address: formattedAddr,
+          instructions,
+          assignedPartnerId: o.assignedPartnerId || null,
+          partnerName,
+          partnerPhone,
+          acceptanceStatus,
+          syncLocation,
+          lastSyncedTime,
+          delayReason,
+          newEstimatedTime,
+          status: o.status,
+          isDelivered,
+          isPendingConfirmation,
+          isOutForDelivery,
+          isConfirmed,
+          rating,
+          raw: o,
+        };
+      })
+      .filter((d) => {
+        if (deliveryTab === 'ACTIVE') return d.isOutForDelivery || d.isPendingConfirmation || d.status === 'PACKING' || d.status === 'ORDER_ACCEPTED';
+        if (deliveryTab === 'CONFIRMED') return d.isDelivered || d.isConfirmed;
+        if (deliveryTab === 'DELAYED') return !!d.delayReason;
+        if (deliveryTab === 'REJECTED') return d.acceptanceStatus === 'REJECTED';
+        return true;
+      });
+  }, [orders, rawPartners, deliveryTab]);
 
   // Aggregate counts for header
   const partnerCounts = useMemo(() => {
@@ -142,7 +192,7 @@ export default function DeliveryPartners() {
     let offDuty = 0;
     partners.forEach((p) => {
       if (p.statusType === 'on_delivery') onDelivery++;
-      else if (p.statusType === 'at_store') atStore++;
+      else if (p.online) atStore++;
       else offDuty++;
     });
     return { onDelivery, atStore, offDuty };
@@ -168,12 +218,16 @@ export default function DeliveryPartners() {
 
   const handleAssign = async (orderId, partnerId) => {
     if (!partnerId) return;
-    const targetPartner = partners.find((p) => p.id === partnerId);
+    const targetPartner = rawPartners.find((p) => p.id === partnerId);
+    if (targetPartner && (targetPartner.isOnDuty === false || targetPartner.isActive === false)) {
+      toast.error(`${targetPartner.name} is currently OFF DUTY and cannot be assigned`);
+      return;
+    }
     try {
       await apiPatch(`/orders/${orderId}/assign`, { partnerId });
       toast.success(`Assigned Order to ${targetPartner?.name || 'Partner'}`);
     } catch (err) {
-      toast.error(err.message || 'Failed to assign order');
+      toast.error(err.response?.data?.error || err.message || 'Failed to assign order');
     }
   };
 
@@ -290,8 +344,8 @@ export default function DeliveryPartners() {
                     <p className="text-[10px] font-semibold text-gray-400 mt-0.5">Delivered</p>
                   </div>
                   <div>
-                    <p className="text-sm font-black text-gray-900 leading-tight">₹{partner.cashHeld}</p>
-                    <p className="text-[10px] font-semibold text-gray-400 mt-0.5">Cash held</p>
+                    <p className="text-sm font-black text-gray-900 leading-tight">{partner.activeOrdersCount}</p>
+                    <p className="text-[10px] font-semibold text-gray-400 mt-0.5">Active</p>
                   </div>
                   <div>
                     <p className="text-sm font-black text-gray-900 leading-tight">{partner.onTime}</p>
@@ -321,59 +375,242 @@ export default function DeliveryPartners() {
         )}
       </div>
 
-      {/* ── Ready to Dispatch Section (Live packed orders from DB) ── */}
-      <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-extrabold text-gray-900 tracking-tight">
-            Ready to dispatch
-          </h2>
-          <span className="text-xs font-semibold text-gray-400">
-            {dispatchOrders.length} packed {dispatchOrders.length === 1 ? 'order' : 'orders'} waiting for partner
-          </span>
+      {/* ── Deliveries Section: Live Orders Tracking & Assignments ── */}
+      <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-gray-100">
+          <div>
+            <h2 className="text-sm font-extrabold text-gray-900 tracking-tight">
+              Live Deliveries & Tracking
+            </h2>
+            <p className="text-xs font-semibold text-gray-400 mt-0.5">
+              Real-time sync, partner acceptance, GPS coordinates, delay alerts & customer ratings
+            </p>
+          </div>
+
+          {/* Delivery Filter Tabs */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+            {[
+              { id: 'ALL', label: 'All Orders' },
+              { id: 'ACTIVE', label: 'Active Delivery' },
+              { id: 'DELAYED', label: 'Delayed' },
+              { id: 'CONFIRMED', label: 'Delivered & Rated' },
+              { id: 'REJECTED', label: 'Rejected' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setDeliveryTab(tab.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  deliveryTab === tab.id
+                    ? 'bg-[#0A7C47] text-white shadow-2xs'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                <th className="pb-3 font-bold">Order</th>
-                <th className="pb-3 font-bold">Customer</th>
-                <th className="pb-3 font-bold">Area</th>
-                <th className="pb-3 font-bold">Distance</th>
-                <th className="pb-3 font-bold">Slot</th>
-                <th className="pb-3 font-bold">Instructions</th>
-                <th className="pb-3 font-bold">Assign to</th>
+              <tr className="border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider text-gray-400 bg-gray-50/50">
+                <th className="py-3 px-3 font-bold">Order Details</th>
+                <th className="py-3 px-3 font-bold">Customer Details</th>
+                <th className="py-3 px-3 font-bold">Assigned Partner</th>
+                <th className="py-3 px-3 font-bold">Sync Location</th>
+                <th className="py-3 px-3 font-bold">Timing & Delay</th>
+                <th className="py-3 px-3 font-bold">Delivery & Rating</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50 font-medium text-gray-800">
-              {dispatchOrders.length === 0 ? (
+            <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
+              {deliveriesList.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-gray-400 font-semibold">
-                    No packed orders currently waiting for dispatch. All assigned!
+                  <td colSpan={6} className="py-10 text-center text-gray-400 font-semibold">
+                    No delivery orders matching the selected filter.
                   </td>
                 </tr>
               ) : (
-                dispatchOrders.map((o) => (
-                  <tr key={o.id} className="hover:bg-gray-50/70 transition-colors">
-                    <td className="py-3.5 font-mono font-bold text-gray-900">{o.orderNo}</td>
-                    <td className="py-3.5 font-bold text-gray-900">{o.customer}</td>
-                    <td className="py-3.5 text-gray-600">{o.area}</td>
-                    <td className="py-3.5 text-gray-600">{o.distance}</td>
-                    <td className="py-3.5 text-gray-600">{formatDeliverySlot(o.slot)}</td>
-                    <td className="py-3.5 text-amber-900 font-semibold">{o.instructions}</td>
-                    <td className="py-3.5">
-                      <select
-                        defaultValue=""
-                        onChange={(e) => handleAssign(o.id, e.target.value)}
-                        className="px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none focus:border-emerald-600 cursor-pointer shadow-2xs"
-                      >
-                        <option value="">Choose partner</option>
-                        {partners.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} ({p.status})
-                          </option>
-                        ))}
-                      </select>
+                deliveriesList.map((d) => (
+                  <tr key={d.id} className="hover:bg-gray-50/70 transition-colors">
+                    {/* 1. Order Details */}
+                    <td className="py-3.5 px-3 align-top min-w-[130px]">
+                      <div className="font-mono font-bold text-gray-900 text-sm">{d.orderNo}</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">{d.placed}</div>
+                      <div className="text-[11px] text-gray-600 mt-1 max-w-[150px] truncate" title={d.itemsSummary}>
+                        {d.itemsCount} items · {d.itemsSummary}
+                      </div>
+                      <div className="mt-1 font-bold text-[#0A7C47] text-xs">
+                        Paid online · ₹{d.total}
+                      </div>
+                    </td>
+
+                    {/* 2. Customer Details */}
+                    <td className="py-3.5 px-3 align-top max-w-[210px]">
+                      <div className="font-bold text-gray-900">{d.customer}</div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[11px] font-mono text-gray-500">{maskPhone(d.phone)}</span>
+                        {d.phone && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleCall(d.phone)}
+                              className="p-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 cursor-pointer"
+                              title="Call customer"
+                            >
+                              <Phone size={10} />
+                            </button>
+                            <button
+                              onClick={() => window.open(`https://wa.me/91${String(d.phone).replace(/\D/g, '')}`, '_blank')}
+                              className="p-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 cursor-pointer"
+                              title="WhatsApp customer"
+                            >
+                              <MessageSquare size={10} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-gray-600 mt-1 leading-relaxed">
+                        {d.address}
+                      </div>
+                      {d.instructions ? (
+                        <div className="mt-1.5 p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-900 font-semibold">
+                          📌 {d.instructions}
+                        </div>
+                      ) : null}
+                    </td>
+
+                    {/* 3. Assigned Partner */}
+                    <td className="py-3.5 px-3 align-top min-w-[160px]">
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-gray-900 text-xs">
+                            {d.partnerName}
+                          </span>
+                          {d.acceptanceStatus === 'ACCEPTED' && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              Accepted
+                            </span>
+                          )}
+                          {d.acceptanceStatus === 'REJECTED' && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200">
+                              Rejected
+                            </span>
+                          )}
+                          {d.acceptanceStatus === 'PENDING' && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200 animate-pulse">
+                              Pending
+                            </span>
+                          )}
+                        </div>
+
+                        {d.partnerPhone && (
+                          <div className="text-[10px] font-mono text-gray-400">
+                            {maskPhone(d.partnerPhone)}
+                          </div>
+                        )}
+
+                        {/* Assign / Re-assign Dropdown (Only On Duty Partners) */}
+                        {!d.isDelivered && (
+                          <select
+                            value={d.assignedPartnerId || ''}
+                            onChange={(e) => handleAssign(d.id, e.target.value)}
+                            className="w-full px-2 py-1 bg-white border border-gray-200 rounded-lg text-[11px] font-semibold text-gray-700 focus:outline-none focus:border-emerald-600 cursor-pointer shadow-2xs"
+                          >
+                            <option value="">{d.assignedPartnerId ? 'Re-assign partner...' : 'Assign partner...'}</option>
+                            {partners.map((p) => {
+                              const isOffDuty = p.isOnDuty === false || p.isActive === false;
+                              return (
+                                <option key={p.id} value={p.id} disabled={isOffDuty}>
+                                  {p.name} {isOffDuty ? '(Off Duty)' : '(On Duty)'}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* 4. Sync Location */}
+                    <td className="py-3.5 px-3 align-top min-w-[140px]">
+                      {d.syncLocation && typeof d.syncLocation.lat === 'number' ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1 text-[11px] font-bold text-gray-800">
+                            <MapPin size={12} className="text-[#0A7C47]" />
+                            <span>{d.syncLocation.lat.toFixed(4)}, {d.syncLocation.lng.toFixed(4)}</span>
+                          </div>
+                          <div className="text-[10px] text-gray-400">
+                            {d.lastSyncedTime ? `Synced ${new Date(d.lastSyncedTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : 'Live synced'}
+                          </div>
+                          <button
+                            onClick={() => window.open(`https://www.google.com/maps?q=${d.syncLocation.lat},${d.syncLocation.lng}`, '_blank')}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-800 hover:underline cursor-pointer"
+                          >
+                            <span>Open in Maps</span>
+                            <ExternalLink size={10} />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-[11px] italic">Awaiting sync</span>
+                      )}
+                    </td>
+
+                    {/* 5. Timing & Delay */}
+                    <td className="py-3.5 px-3 align-top min-w-[130px]">
+                      {d.delayReason ? (
+                        <div className="space-y-1">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                            Delayed · {d.newEstimatedTime || 'New ETA'}
+                          </span>
+                          <div className="text-[11px] text-amber-800 font-medium leading-tight">
+                            <span className="font-bold">Reason:</span> {d.delayReason}
+                          </div>
+                          <div className="text-[9px] text-amber-700 italic">
+                            Customer & email notified
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-600">
+                          On schedule
+                        </span>
+                      )}
+                    </td>
+
+                    {/* 6. Delivery & Confirmation */}
+                    <td className="py-3.5 px-3 align-top min-w-[140px]">
+                      {d.isDelivered || d.isConfirmed ? (
+                        <div className="space-y-1">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            ✓ Delivered & Confirmed
+                          </span>
+                          {d.rating ? (
+                            <div className="flex items-center gap-1 text-xs font-black text-amber-700">
+                              <Star size={12} className="fill-amber-400 text-amber-400" />
+                              <span>{d.rating}/5 rating</span>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-emerald-700 font-semibold">
+                              Receipt confirmed
+                            </div>
+                          )}
+                        </div>
+                      ) : d.isPendingConfirmation ? (
+                        <div className="space-y-1">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                            Pending Customer Confirmation
+                          </span>
+                          <div className="text-[10px] text-gray-500 font-medium">
+                            Awaiting "Order collected? Yes"
+                          </div>
+                        </div>
+                      ) : d.isOutForDelivery ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-200">
+                          Out for delivery
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-600">
+                          {d.status || 'Processing'}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))

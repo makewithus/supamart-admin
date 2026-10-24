@@ -6,7 +6,7 @@ import {
 import { db } from '../config/firebase';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import OrderDetailsModal from '../components/OrderDetailsModal';
-import { formatDeliverySlot } from '../utils/orderUtils';
+import { apiPatch } from '../services/api';
 import toast from 'react-hot-toast';
 
 function formatRelativeTime(ms) {
@@ -38,11 +38,18 @@ export default function Orders() {
   const [activeTab, setActiveTab] = useState('ALL');
   const [search, setSearch] = useState('');
   const [dateRange, setDateRange] = useState('Last 7 days');
-  const [slotFilter, setSlotFilter] = useState('All slots');
   const [paymentFilter, setPaymentFilter] = useState('Any payment');
   const [partnerFilter, setPartnerFilter] = useState('Any partner');
+  const [partners, setPartners] = useState([]);
   const [selectedOrders, setSelectedOrders] = useState({});
   const [selectedOrderForDrawer, setSelectedOrderForDrawer] = useState(null);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'deliveryPartners'), (snap) => {
+      setPartners(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    return () => unsub();
+  }, []);
 
   // Subscribe to live orders in real-time from Firestore
   useEffect(() => {
@@ -83,19 +90,19 @@ export default function Orders() {
             if (data.paymentStatus === 'AWAITING_CONFIRMATION' || data.paymentStatus === 'PENDING') {
               paymentType = 'verify';
               paymentText = 'Verify UTR';
-            } else if (data.paymentMethod === 'COD' || data.paymentMethod === 'CASH_ON_DELIVERY') {
-              paymentType = 'cod';
-              paymentText = 'Cash on delivery';
-            } else if (data.paymentStatus === 'PAID') {
-              paymentType = 'paid';
-              paymentText = 'Paid · UPI';
             } else if (data.paymentStatus === 'FAILED') {
               paymentType = 'failed';
               paymentText = 'Payment failed';
+            } else {
+              paymentType = 'paid';
+              paymentText = 'Paid · Online';
             }
 
-            const slot = formatDeliverySlot(data.deliverySlot || data.slot);
-            const partner = data.deliveryBoyName || data.deliveryPartner?.name || (statusKey === 'PACKING' ? 'Not assigned' : '—');
+            const partner = data.deliveryBoyName || data.deliveryPartner?.name || (statusKey === 'PACKING' || statusKey === 'NEW' ? 'Not assigned' : '—');
+            const assignedPartnerId = data.assignedPartnerId || data.deliveryBoyId || null;
+            const deliveryAcceptanceStatus = data.deliveryAcceptanceStatus || (assignedPartnerId ? 'PENDING' : null);
+            const delayReason = data.delayReason || null;
+            const deliveryDelay = data.deliveryDelay || null;
             const itemsCount = (data.items || []).length;
             const total = Math.round(Number(data.total || data.totalAmount) || 0);
 
@@ -108,7 +115,10 @@ export default function Orders() {
               total,
               paymentText,
               paymentType,
-              slot,
+              assignedPartnerId,
+              deliveryAcceptanceStatus,
+              delayReason,
+              deliveryDelay,
               status: statusKey === 'NEW' ? 'New' : statusKey === 'PACKING' ? 'Packing' : statusKey === 'OUT_FOR_DELIVERY' ? 'Out for delivery' : statusKey === 'DELIVERED' ? 'Delivered' : statusKey === 'CANCELLED' ? 'Cancelled' : 'Disputed',
               statusKey,
               partner,
@@ -134,6 +144,21 @@ export default function Orders() {
       setLoading(false);
     }
   }, []);
+
+  const handleAssignPartner = async (orderId, partnerId) => {
+    if (!partnerId) return;
+    const target = partners.find((p) => p.id === partnerId);
+    if (target && (target.isOnDuty === false || target.isActive === false)) {
+      toast.error(`${target.name} is currently OFF DUTY and cannot be assigned`);
+      return;
+    }
+    try {
+      await apiPatch(`/orders/${orderId}/assign`, { partnerId });
+      toast.success(`Assigned to ${target?.name || 'Partner'}`);
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to assign order');
+    }
+  };
 
   // If navigated with openOrderId in state, open it immediately
   useEffect(() => {
@@ -193,14 +218,12 @@ export default function Orders() {
         const matchArea = o.phoneArea.toLowerCase().includes(q);
         if (!matchNo && !matchCust && !matchArea) return false;
       }
-      if (slotFilter !== 'All slots' && !formatDeliverySlot(o.slot).toLowerCase().includes(slotFilter.toLowerCase())) return false;
       if (paymentFilter === 'Verify UTR' && o.paymentType !== 'verify') return false;
       if (paymentFilter === 'Paid · UPI' && o.paymentType !== 'paid') return false;
-      if (paymentFilter === 'Cash on delivery' && o.paymentType !== 'cod') return false;
       if (partnerFilter !== 'Any partner' && o.partner !== partnerFilter) return false;
       return true;
     });
-  }, [orders, activeTab, search, slotFilter, paymentFilter, partnerFilter]);
+  }, [orders, activeTab, search, paymentFilter, partnerFilter]);
 
   // Aggregate total for last 7 days from live orders
   const totalRevenue7d = useMemo(() => {
@@ -231,14 +254,13 @@ export default function Orders() {
           <button
             onClick={() => {
               if (orders.length === 0) return toast.error('No orders to export');
-              const headers = ['Order #', 'Customer', 'Items', 'Total', 'Payment', 'Slot', 'Status', 'Partner', 'Placed'];
+              const headers = ['Order #', 'Customer', 'Items', 'Total', 'Payment', 'Status', 'Partner', 'Placed'];
               const rows = filteredOrders.map((o) => [
                 o.orderNo,
                 `"${o.customer}"`,
                 o.itemsCount,
                 o.total,
                 o.paymentText,
-                formatDeliverySlot(o.slot),
                 o.status,
                 o.partner,
                 o.placed,
@@ -335,22 +357,6 @@ export default function Orders() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Slot Filter */}
-            <div className="relative">
-              <select
-                value={slotFilter}
-                onChange={(e) => setSlotFilter(e.target.value)}
-                className="appearance-none bg-white border border-gray-200/80 rounded-xl pl-3 pr-7 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none cursor-pointer shadow-2xs"
-              >
-                <option>All slots</option>
-                <option>9–11 AM</option>
-                <option>11 AM–1 PM</option>
-                <option>4–6 PM</option>
-                <option>6–8 PM</option>
-              </select>
-              <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-            </div>
-
             {/* Payment Filter */}
             <div className="relative">
               <select
@@ -361,7 +367,6 @@ export default function Orders() {
                 <option>Any payment</option>
                 <option>Verify UTR</option>
                 <option>Paid · UPI</option>
-                <option>Cash on delivery</option>
               </select>
               <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             </div>
@@ -374,9 +379,12 @@ export default function Orders() {
                 className="appearance-none bg-white border border-gray-200/80 rounded-xl pl-3 pr-7 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none cursor-pointer shadow-2xs"
               >
                 <option>Any partner</option>
-                <option>Ravi Kumar</option>
-                <option>Suresh Yadav</option>
                 <option>Not assigned</option>
+                {partners.map((p) => (
+                  <option key={p.id} value={p.name}>
+                    {p.name}
+                  </option>
+                ))}
               </select>
               <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
             </div>
@@ -401,7 +409,6 @@ export default function Orders() {
                 <th className="py-3 px-3">ITEMS</th>
                 <th className="py-3 px-3">TOTAL</th>
                 <th className="py-3 px-3">PAYMENT</th>
-                <th className="py-3 px-3">SLOT</th>
                 <th className="py-3 px-3">STATUS</th>
                 <th className="py-3 px-3">PARTNER</th>
                 <th className="py-3 px-4">PLACED</th>
@@ -411,13 +418,13 @@ export default function Orders() {
             <tbody className="divide-y divide-gray-100 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-gray-400 font-semibold">
+                  <td colSpan={9} className="py-12 text-center text-gray-400 font-semibold">
                     Loading live orders from database…
                   </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-gray-400 font-semibold">
+                  <td colSpan={9} className="py-12 text-center text-gray-400 font-semibold">
                     No orders matching this filter.
                   </td>
                 </tr>
@@ -483,10 +490,6 @@ export default function Orders() {
                         )}
                       </td>
 
-                      <td className="py-3 px-3 font-semibold text-gray-600">
-                        {formatDeliverySlot(o.slot)}
-                      </td>
-
                       <td className="py-3 px-3">
                         {o.statusKey === 'NEW' && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-600">
@@ -520,13 +523,48 @@ export default function Orders() {
                         )}
                       </td>
 
-                      <td className="py-3 px-3">
-                        {o.partner === 'Not assigned' ? (
-                          <span className="font-bold text-[#dc2626]">Not assigned</span>
-                        ) : o.partner === '—' ? (
-                          <span className="text-gray-400">—</span>
-                        ) : (
+                      <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
+                        {o.statusKey === 'DELIVERED' || o.statusKey === 'CANCELLED' ? (
                           <span className="font-bold text-gray-900">{o.partner}</span>
+                        ) : (
+                          <div className="flex flex-col gap-1 min-w-[150px]">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-xs text-gray-900">
+                                {o.partner && o.partner !== 'Not assigned' && o.partner !== '—' ? o.partner : 'Unassigned'}
+                              </span>
+                              {o.deliveryAcceptanceStatus === 'ACCEPTED' && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800">
+                                  Accepted
+                                </span>
+                              )}
+                              {o.deliveryAcceptanceStatus === 'REJECTED' && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-100 text-rose-800">
+                                  Rejected
+                                </span>
+                              )}
+                              {o.deliveryAcceptanceStatus === 'PENDING' && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-800 animate-pulse">
+                                  Pending
+                                </span>
+                              )}
+                            </div>
+
+                            <select
+                              value={o.assignedPartnerId || ''}
+                              onChange={(e) => handleAssignPartner(o.id, e.target.value)}
+                              className="text-[11px] font-semibold py-1 px-1.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 focus:outline-none focus:border-emerald-600 focus:bg-white cursor-pointer shadow-2xs"
+                            >
+                              <option value="">{o.assignedPartnerId ? 'Re-assign partner...' : 'Assign partner...'}</option>
+                              {partners.map((p) => {
+                                const isOffDuty = p.isOnDuty === false || p.isActive === false;
+                                return (
+                                  <option key={p.id} value={p.id} disabled={isOffDuty}>
+                                    {p.name} {isOffDuty ? '(Off Duty)' : '(On Duty)'}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
                         )}
                       </td>
 
@@ -546,6 +584,7 @@ export default function Orders() {
       {selectedOrderForDrawer && (
         <OrderDetailsModal
           order={selectedOrderForDrawer}
+          partners={partners}
           onClose={() => setSelectedOrderForDrawer(null)}
           onSuccess={() => {}}
         />

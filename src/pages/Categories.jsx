@@ -132,7 +132,14 @@ export default function Categories() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {groups.map(({ parent, children }) => {
+              {groups.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-sm text-gray-500 font-medium">
+                    No categories found. Click "Add category" above to create one.
+                  </td>
+                </tr>
+              ) : (
+                groups.map(({ parent, children }) => {
                 const subNames = children.map((c) => c.name);
                 let subText = 'No subcategories';
                 if (subNames.length > 0) {
@@ -209,7 +216,7 @@ export default function Categories() {
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

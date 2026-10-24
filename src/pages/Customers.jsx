@@ -157,15 +157,15 @@ export default function Customers() {
         activeUids.add(o.userId);
       }
     });
-    return activeUids.size || 5;
+    return activeUids.size;
   }, [orders, thirtyDaysAgo]);
 
   const msClubCount = useMemo(() => {
-    return customers.filter((c) => !!c.isMSClubMember).length || 1;
+    return customers.filter((c) => !!c.isMSClubMember).length;
   }, [customers]);
 
   const deletionRequestsCount = useMemo(() => {
-    return customers.filter((c) => !!c.deletionRequested || !!c.scheduledDeletionAt).length || 1;
+    return customers.filter((c) => !!c.deletionRequested || !!c.scheduledDeletionAt).length;
   }, [customers]);
 
   const filteredCustomers = useMemo(() => {
@@ -176,16 +176,19 @@ export default function Customers() {
       });
     }
     if (activeTab === 'msclub') {
-      return customers.filter((c) => !!c.isMSClubMember || c.name === 'Krrish Singhal');
+      return customers.filter((c) => !!c.isMSClubMember);
     }
     if (activeTab === 'deletion') {
-      return customers.filter((c) => !!c.deletionRequested || !!c.scheduledDeletionAt || c.email?.includes('sheroom') || c.name?.includes('Sherhan'));
+      return customers.filter((c) => !!c.deletionRequested || !!c.scheduledDeletionAt);
     }
     return customers;
   }, [customers, activeTab, customerStatsMap, thirtyDaysAgo]);
 
   const handleExportCSV = () => {
-    if (customers.length === 0) return;
+    if (customers.length === 0) {
+      toast('No customers to export');
+      return;
+    }
     const headers = ['Name', 'Email', 'Phone', 'Orders', 'Lifetime Spend (INR)', 'Joined'];
     const rows = customers.map((c) => {
       const stats = customerStatsMap[c.id] || {};
@@ -219,7 +222,7 @@ export default function Customers() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Customers</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {customers.length || 10} registered · {orderedThisMonthCount} ordered in the last 30 days
+            {customers.length} registered · {orderedThisMonthCount} ordered in the last 30 days
           </p>
         </div>
         <button
@@ -242,7 +245,7 @@ export default function Customers() {
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            All <span className="ml-1 text-xs text-gray-500 font-normal">{customers.length || 10}</span>
+            All <span className="ml-1 text-xs text-gray-500 font-normal">{customers.length}</span>
           </button>
 
           <button
@@ -294,84 +297,95 @@ export default function Customers() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredCustomers.map((c) => {
-                const stats = customerStatsMap[c.id] || {};
-                const orderCount = c.totalOrders ?? stats.count ?? (c.email?.includes('dev@mwus') ? 14 : 1);
-                const lifetimeSpend = Math.round(c.lifetimeSpending ?? stats.spend ?? (c.email?.includes('dev@mwus') ? 4908 : 948));
-                const initial = (c.name || 'C')[0]?.toUpperCase();
-                const maskedPhone = maskPhone(c.mobile);
-                const lastOrderTime = stats.lastOrderAt ? formatRelativeTime(stats.lastOrderAt) : (c.lastOrderTime || '2 h ago');
-                const joinedDate = c.createdAt ? formatJoinedDate(c.createdAt) : (c.joinedDate || '27 Jul');
+              {filteredCustomers.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <p className="font-semibold text-gray-500 text-sm">No customers found</p>
+                      <p className="text-xs text-gray-400">There are no customers matching this category.</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredCustomers.map((c) => {
+                  const stats = customerStatsMap[c.id] || {};
+                  const orderCount = c.totalOrders ?? stats.count ?? 0;
+                  const lifetimeSpend = Math.round(c.lifetimeSpending ?? stats.spend ?? 0);
+                  const initial = (c.name || 'C')[0]?.toUpperCase();
+                  const maskedPhone = maskPhone(c.mobile);
+                  const lastOrderTime = stats.lastOrderAt ? formatRelativeTime(stats.lastOrderAt) : (c.lastOrderTime || 'Never');
+                  const joinedDate = c.createdAt ? formatJoinedDate(c.createdAt) : (c.joinedDate || '—');
 
-                const isMSClub = !!c.isMSClubMember || c.name === 'Krrish Singhal';
-                const isTest = c.email?.includes('test') || c.name?.toLowerCase().includes('test');
-                const isDeletion = !!c.deletionRequested || !!c.scheduledDeletionAt || c.email?.includes('sheroom') || c.name?.includes('Sherhan');
+                  const isMSClub = !!c.isMSClubMember;
+                  const isTest = c.email?.includes('test') || c.name?.toLowerCase().includes('test');
+                  const isDeletion = !!c.deletionRequested || !!c.scheduledDeletionAt;
 
-                return (
-                  <tr
-                    key={c.id}
-                    onClick={() => setSelected(c)}
-                    className="hover:bg-gray-50/70 transition-colors cursor-pointer"
-                  >
-                    {/* Customer */}
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-700 font-bold text-xs flex items-center justify-center shrink-0">
-                          {initial}
+                  return (
+                    <tr
+                      key={c.id}
+                      onClick={() => setSelected(c)}
+                      className="hover:bg-gray-50/70 transition-colors cursor-pointer"
+                    >
+                      {/* Customer */}
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-700 font-bold text-xs flex items-center justify-center shrink-0">
+                            {initial}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-gray-900 text-sm truncate">{c.name || 'Customer'}</p>
+                            <p className="text-xs text-gray-400 truncate">{c.email || '—'}</p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-bold text-gray-900 text-sm truncate">{c.name || 'Customer'}</p>
-                          <p className="text-xs text-gray-400 truncate">{c.email || '—'}</p>
-                        </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Phone */}
-                    <td className="px-6 py-4 text-sm text-gray-600 font-mono whitespace-nowrap">
-                      {maskedPhone}
-                    </td>
+                      {/* Phone */}
+                      <td className="px-6 py-4 text-sm text-gray-600 font-mono whitespace-nowrap">
+                        {maskedPhone}
+                      </td>
 
-                    {/* Orders */}
-                    <td className="px-6 py-4 text-sm text-gray-800 whitespace-nowrap">
-                      {orderCount}
-                    </td>
+                      {/* Orders */}
+                      <td className="px-6 py-4 text-sm text-gray-800 whitespace-nowrap">
+                        {orderCount}
+                      </td>
 
-                    {/* Lifetime Spend */}
-                    <td className="px-6 py-4 font-bold text-gray-900 text-sm whitespace-nowrap">
-                      ₹{lifetimeSpend.toLocaleString('en-IN')}
-                    </td>
+                      {/* Lifetime Spend */}
+                      <td className="px-6 py-4 font-bold text-gray-900 text-sm whitespace-nowrap">
+                        ₹{lifetimeSpend.toLocaleString('en-IN')}
+                      </td>
 
-                    {/* Last Order */}
-                    <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
-                      {lastOrderTime}
-                    </td>
+                      {/* Last Order */}
+                      <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                        {lastOrderTime}
+                      </td>
 
-                    {/* Joined */}
-                    <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
-                      {joinedDate}
-                    </td>
+                      {/* Joined */}
+                      <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                        {joinedDate}
+                      </td>
 
-                    {/* Badges */}
-                    <td className="px-6 py-4 text-right whitespace-nowrap">
-                      {isMSClub && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#fef3c7] text-[#92400e]">
-                          MS Club
-                        </span>
-                      )}
-                      {isTest && !isMSClub && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#f3f4f6] text-[#4b5563]">
-                          Test account
-                        </span>
-                      )}
-                      {isDeletion && !isMSClub && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#fee2e2] text-[#991b1b]">
-                          Deletion on 22 Nov
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+                      {/* Badges */}
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        {isMSClub && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#fef3c7] text-[#92400e]">
+                            MS Club
+                          </span>
+                        )}
+                        {isTest && !isMSClub && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#f3f4f6] text-[#4b5563]">
+                            Test account
+                          </span>
+                        )}
+                        {isDeletion && !isMSClub && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#fee2e2] text-[#991b1b]">
+                            {c.scheduledDeletionAt ? `Deletion on ${formatJoinedDate(c.scheduledDeletionAt)}` : 'Deletion requested'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

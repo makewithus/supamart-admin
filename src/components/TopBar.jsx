@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Volume2, Bell, Menu, ShoppingBag, CreditCard, AlertCircle, Package } from 'lucide-react';
+import { Search, Volume2, Bell, Menu, ShoppingBag, CreditCard, AlertCircle, Package, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getAudioContext, playNotificationSound } from '../utils/notificationSound';
+import { useBadges } from '../context/BadgeContext';
 import toast from 'react-hot-toast';
 
 export default function TopBar({ onOpenMobileMenu }) {
@@ -12,6 +13,8 @@ export default function TopBar({ onOpenMobileMenu }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const notifRef = useRef(null);
+
+  const { counts: alertCounts } = useBadges();
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -138,9 +141,11 @@ export default function TopBar({ onOpenMobileMenu }) {
             className="relative w-9 h-9 flex items-center justify-center rounded-lg bg-white border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors shadow-2xs"
           >
             <Bell size={16} strokeWidth={1.8} />
-            <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full bg-[#ef4444] text-white text-[10px] font-bold shadow-2xs">
-              6
-            </span>
+            {(alertCounts.orders + alertCounts.payments + alertCounts.issues + alertCounts.products) > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full bg-[#ef4444] text-white text-[10px] font-bold shadow-2xs">
+                {alertCounts.orders + alertCounts.payments + alertCounts.issues + alertCounts.products}
+              </span>
+            )}
           </button>
 
           {/* Notifications Dropdown */}
@@ -153,54 +158,71 @@ export default function TopBar({ onOpenMobileMenu }) {
                 </span>
               </div>
               <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
-                <button
-                  onClick={() => { navigate('/orders'); setNotificationsOpen(false); }}
-                  className="w-full text-left px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="p-2 rounded-lg bg-red-50 text-[#ef4444] shrink-0 mt-0.5">
-                    <ShoppingBag size={14} />
+                {(alertCounts.orders + alertCounts.payments + alertCounts.issues + alertCounts.products) === 0 ? (
+                  <div className="py-8 px-4 text-center text-xs text-gray-500 flex flex-col items-center justify-center gap-2">
+                    <CheckCircle2 size={24} className="text-[#0a7c47]" />
+                    <span>All caught up! No active alerts.</span>
                   </div>
-                  <div>
-                    <p className="text-xs font-bold text-gray-900">4 Orders Awaiting Action</p>
-                    <p className="text-[11px] text-gray-500">New customer orders ready to pack or dispatch</p>
-                  </div>
-                </button>
-                <button
-                  onClick={() => { navigate('/payments'); setNotificationsOpen(false); }}
-                  className="w-full text-left px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="p-2 rounded-lg bg-[#e6f4ea] text-[#0a7c47] shrink-0 mt-0.5">
-                    <CreditCard size={14} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-gray-900">13 Payments to Verify</p>
-                    <p className="text-[11px] text-gray-500">Manual UPI claims awaiting bank confirmation</p>
-                  </div>
-                </button>
-                <button
-                  onClick={() => { navigate('/issues'); setNotificationsOpen(false); }}
-                  className="w-full text-left px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="p-2 rounded-lg bg-red-50 text-[#ef4444] shrink-0 mt-0.5">
-                    <AlertCircle size={14} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-gray-900">2 Customer Issues Open</p>
-                    <p className="text-[11px] text-gray-500">Damaged / missing items reported</p>
-                  </div>
-                </button>
-                <button
-                  onClick={() => { navigate('/products'); setNotificationsOpen(false); }}
-                  className="w-full text-left px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="p-2 rounded-lg bg-amber-50 text-[#d97706] shrink-0 mt-0.5">
-                    <Package size={14} />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-gray-900">3 Low Stock Items</p>
-                    <p className="text-[11px] text-gray-500">Refill inventory to avoid stockouts</p>
-                  </div>
-                </button>
+                ) : (
+                  <>
+                    {alertCounts.orders > 0 && (
+                      <button
+                        onClick={() => { navigate('/orders'); setNotificationsOpen(false); }}
+                        className="w-full text-left px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="p-2 rounded-lg bg-red-50 text-[#ef4444] shrink-0 mt-0.5">
+                          <ShoppingBag size={14} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-gray-900">{alertCounts.orders} Orders Awaiting Action</p>
+                          <p className="text-[11px] text-gray-500">New customer orders ready to pack or dispatch</p>
+                        </div>
+                      </button>
+                    )}
+                    {alertCounts.payments > 0 && (
+                      <button
+                        onClick={() => { navigate('/payments'); setNotificationsOpen(false); }}
+                        className="w-full text-left px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="p-2 rounded-lg bg-[#e6f4ea] text-[#0a7c47] shrink-0 mt-0.5">
+                          <CreditCard size={14} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-gray-900">{alertCounts.payments} Payments to Verify</p>
+                          <p className="text-[11px] text-gray-500">Manual UPI claims awaiting bank confirmation</p>
+                        </div>
+                      </button>
+                    )}
+                    {alertCounts.issues > 0 && (
+                      <button
+                        onClick={() => { navigate('/issues'); setNotificationsOpen(false); }}
+                        className="w-full text-left px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="p-2 rounded-lg bg-red-50 text-[#ef4444] shrink-0 mt-0.5">
+                          <AlertCircle size={14} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-gray-900">{alertCounts.issues} Customer Issues Open</p>
+                          <p className="text-[11px] text-gray-500">Damaged / missing items reported</p>
+                        </div>
+                      </button>
+                    )}
+                    {alertCounts.products > 0 && (
+                      <button
+                        onClick={() => { navigate('/products'); setNotificationsOpen(false); }}
+                        className="w-full text-left px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 transition-colors"
+                      >
+                        <div className="p-2 rounded-lg bg-amber-50 text-[#d97706] shrink-0 mt-0.5">
+                          <Package size={14} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-gray-900">{alertCounts.products} Low Stock Items</p>
+                          <p className="text-[11px] text-gray-500">Refill inventory to avoid stockouts</p>
+                        </div>
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           )}

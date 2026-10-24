@@ -43,7 +43,6 @@ import { playNotificationSound, getAudioContext } from '../utils/notificationSou
 const SETTINGS_SECTIONS = [
   { id: 'store-hours', label: 'Store & hours' },
   { id: 'delivery-fees', label: 'Delivery fees', dot: 'orange' },
-  { id: 'delivery-slots', label: 'Delivery slots' },
   { id: 'payments', label: 'Payments' },
   { id: 'tax-gst', label: 'Tax (GST)', dot: 'orange' },
   { id: 'business-legal', label: 'Business & legal', dot: 'orange' },
@@ -89,7 +88,7 @@ export default function Settings() {
 
   // 1. Store & Hours
   const [storeAddress, setStoreAddress] = useState(
-    'HV76+F39, Menamkulam, Thiruvananthapuram, Kerala 695582'
+    'M S TRADERS, HV76+F39, Menamkulam, Thiruvananthapuram, Kerala 695582'
   );
   const [latitude, setLatitude] = useState('8.5636625');
   const [longitude, setLongitude] = useState('76.8602344');
@@ -119,7 +118,7 @@ export default function Settings() {
   const [codEnabled, setCodEnabled] = useState(true);
   const [codMaxLimit, setCodMaxLimit] = useState('2000');
   const [upiManualEnabled, setUpiManualEnabled] = useState(true);
-  const [upiId, setUpiId] = useState('supamart@okaxis');
+  const [upiId, setUpiId] = useState('SBIBHIM.INSTANT06905003255577185@sbipay');
   const [upiTimeoutMins, setUpiTimeoutMins] = useState('30');
   const [onlineGatewayEnabled, setOnlineGatewayEnabled] = useState(true);
   const [gatewayMode, setGatewayMode] = useState('LIVE');
@@ -130,14 +129,14 @@ export default function Settings() {
   const [categoryPricesIncludeGst, setCategoryPricesIncludeGst] = useState({});
   const [globalTaxPercent, setGlobalTaxPercent] = useState('18');
 
-  // 6. Business & legal details
-  const [legalEntityName, setLegalEntityName] = useState('');
-  const [gstin, setGstin] = useState('');
+  // 6. Business & legal details (Source of truth from Customer App Terms & Privacy)
+  const [legalEntityName, setLegalEntityName] = useState('M S TRADERS');
+  const [gstin, setGstin] = useState('32AABCS1429B1Z8');
   const [fssaiLicenceNumber, setFssaiLicenceNumber] = useState('');
   const [invoicePrefix, setInvoicePrefix] = useState('MST/26–27/');
-  const [grievanceOfficerName, setGrievanceOfficerName] = useState('');
-  const [grievanceOfficerEmail, setGrievanceOfficerEmail] = useState('');
-  const [grievanceOfficerPhone, setGrievanceOfficerPhone] = useState('+91');
+  const [grievanceOfficerName, setGrievanceOfficerName] = useState('ANSAR HASSAN, Grievance Officer');
+  const [grievanceOfficerEmail, setGrievanceOfficerEmail] = useState('hassanramla31@gmail.com');
+  const [grievanceOfficerPhone, setGrievanceOfficerPhone] = useState('+91 9037655180');
   const [supportHours, setSupportHours] = useState('9 AM – 6 PM, Mon–Sat');
 
   // 7. Staff & roles
@@ -156,9 +155,9 @@ export default function Settings() {
     paymentReminder30Min: true,
     lowStock: true,
     dailySummaryEmail: false,
-    whatsappNumber: '+91 98470 12345',
+    whatsappNumber: '+91 90376 55180',
     lowStockThreshold: 10,
-    dailyEmailRecipient: 'admin@supamart.in',
+    dailyEmailRecipient: 'hassanramla31@gmail.com',
   });
 
   // Live Firestore subscription: config/global
@@ -187,14 +186,14 @@ export default function Settings() {
         if (Array.isArray(data.holidays) && data.holidays.length) setHolidays(data.holidays);
         if (data.businessLegal) {
           const b = data.businessLegal;
-          if (b.legalEntityName !== undefined) setLegalEntityName(b.legalEntityName);
-          if (b.gstin !== undefined) setGstin(b.gstin);
+          if (b.legalEntityName) setLegalEntityName(b.legalEntityName);
+          if (b.gstin) setGstin(b.gstin);
           if (b.fssaiLicenceNumber !== undefined) setFssaiLicenceNumber(b.fssaiLicenceNumber);
-          if (b.invoicePrefix !== undefined) setInvoicePrefix(b.invoicePrefix);
-          if (b.grievanceOfficerName !== undefined) setGrievanceOfficerName(b.grievanceOfficerName);
-          if (b.grievanceOfficerEmail !== undefined) setGrievanceOfficerEmail(b.grievanceOfficerEmail);
-          if (b.grievanceOfficerPhone !== undefined) setGrievanceOfficerPhone(b.grievanceOfficerPhone);
-          if (b.supportHours !== undefined) setSupportHours(b.supportHours);
+          if (b.invoicePrefix) setInvoicePrefix(b.invoicePrefix);
+          if (b.grievanceOfficerName) setGrievanceOfficerName(b.grievanceOfficerName);
+          if (b.grievanceOfficerEmail) setGrievanceOfficerEmail(b.grievanceOfficerEmail);
+          if (b.grievanceOfficerPhone) setGrievanceOfficerPhone(b.grievanceOfficerPhone);
+          if (b.supportHours) setSupportHours(b.supportHours);
         }
         if (data.paymentConfig) {
           const p = data.paymentConfig;
@@ -253,47 +252,7 @@ export default function Settings() {
     const unsub = onSnapshot(
       q,
       (snap) => {
-        if (!snap.empty) {
-          setStaffList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-        } else {
-          // Initialize default staff if collection is brand new
-          const defaultStaff = [
-            {
-              id: 'staff-owner-1',
-              name: 'Sudarsanan',
-              email: 'sudarsanan.in@gmail.com',
-              role: 'Owner',
-              canAccess: 'Everything',
-              lastActive: 'Now',
-              isOwner: true,
-              createdAt: Date.now() - 86400000 * 30,
-            },
-            {
-              id: 'staff-mgr-1',
-              name: 'Store Manager',
-              email: 'admin@supamart.in',
-              role: 'Manager',
-              canAccess: 'Orders, products, payments, customers',
-              lastActive: 'Today',
-              isOwner: false,
-              createdAt: Date.now() - 86400000 * 10,
-            },
-            {
-              id: 'staff-pkr-1',
-              name: 'Warehouse Packer',
-              email: '—',
-              role: 'Packer',
-              canAccess: 'Orders (packing only)',
-              lastActive: 'Yesterday',
-              isOwner: false,
-              createdAt: Date.now() - 86400000 * 5,
-            },
-          ];
-          setStaffList(defaultStaff);
-          defaultStaff.forEach((s) => {
-            setDoc(doc(db, 'staff', s.id), s).catch(() => {});
-          });
-        }
+        setStaffList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       },
       (err) => {
         console.error('Staff listener error', err);
@@ -302,18 +261,9 @@ export default function Settings() {
     return () => unsub();
   }, []);
 
-  // Filter root categories for Tax Table (matching screenshot categories)
+  // Filter root categories for Tax Table
   const rootCategories = useMemo(() => {
-    const roots = categories.filter((c) => !c.parentId);
-    if (roots.length > 0) return roots;
-    // Fallback if taxonomy not yet loaded
-    return [
-      { id: 'cat-veg', name: 'Fresh Vegetables' },
-      { id: 'cat-grains', name: 'Rice, Atta & Grains' },
-      { id: 'cat-oils', name: 'Cooking Oils & Ghee' },
-      { id: 'cat-snacks', name: 'Snacks & Confectionery' },
-      { id: 'cat-personal', name: 'Personal Care' },
-    ];
+    return categories.filter((c) => !c.parentId);
   }, [categories]);
 
   // Check if all products/categories have a single rate (e.g. 18%)
@@ -839,195 +789,25 @@ export default function Settings() {
               </div>
             )}
 
-            {/* TAB 3: Delivery slots */}
-            {activeTab === 'delivery-slots' && (
-              <div className="space-y-6">
-                <div>
-                  <h2 className="text-sm font-bold text-gray-900">Delivery slots & schedule</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Choose on-demand delivery or predefined customer delivery windows
-                  </p>
-                </div>
-
-                {/* Delivery Mode Option */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-2">
-                    Fulfillment model
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
-                    <button
-                      type="button"
-                      onClick={() => setDeliveryMode('ON_DEMAND')}
-                      className={`p-3.5 rounded-xl border text-left transition-all ${
-                        deliveryMode === 'ON_DEMAND'
-                          ? 'border-[#056B38] bg-[#E6F4EA]/40 ring-1 ring-[#056B38]'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="font-semibold text-xs text-gray-900">
-                        ⚡ Instant On-Demand (30–45 mins)
-                      </div>
-                      <div className="text-[11px] text-gray-500 mt-1">
-                        Orders are assigned to delivery partners immediately upon packing
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeliveryMode('SLOTS')}
-                      className={`p-3.5 rounded-xl border text-left transition-all ${
-                        deliveryMode === 'SLOTS'
-                          ? 'border-[#056B38] bg-[#E6F4EA]/40 ring-1 ring-[#056B38]'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="font-semibold text-xs text-gray-900">
-                        📅 Scheduled Delivery Slots
-                      </div>
-                      <div className="text-[11px] text-gray-500 mt-1">
-                        Customers pick from configured morning/evening delivery windows
-                      </div>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Preparation lead time */}
-                <div className="max-w-xs">
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    Order preparation buffer (minutes)
-                  </label>
-                  <input
-                    type="number"
-                    value={prepMinutes}
-                    onChange={(e) => setPrepMinutes(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-gray-200 bg-white text-xs sm:text-sm text-gray-800 focus:outline-none focus:border-emerald-600"
-                  />
-                </div>
-
-                {/* Slot Windows Table */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-semibold text-gray-700">
-                      Standard delivery slots
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setShowAddSlot(true)}
-                      className="text-xs font-semibold text-[#056B38] hover:underline"
-                    >
-                      + Add slot window
-                    </button>
-                  </div>
-
-                  <div className="space-y-2 max-w-lg">
-                    {slots.map((s) => (
-                      <div
-                        key={s.id}
-                        className="flex items-center justify-between p-3 rounded-xl border border-gray-200 bg-gray-50/50"
-                      >
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => toggleSlotActive(s.id)}
-                            className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${
-                              s.active
-                                ? 'bg-[#056B38] text-white shadow-2xs'
-                                : 'border border-gray-300 bg-white'
-                            }`}
-                          >
-                            {s.active && <Check size={14} strokeWidth={3} />}
-                          </button>
-                          <span className="text-xs font-medium text-gray-800">
-                            {s.label}
-                          </span>
-                        </div>
-                        <span className="text-[11px] text-gray-500 font-medium">
-                          {s.active ? 'Available' : 'Disabled'}
-                        </span>
-                      </div>
-                    ))}
-
-                    {showAddSlot && (
-                      <div className="flex items-center gap-2 pt-2">
-                        <input
-                          type="text"
-                          placeholder="e.g. 7:00 PM – 9:00 PM"
-                          value={newSlotLabel}
-                          onChange={(e) => setNewSlotLabel(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && addSlot()}
-                          className="flex-1 px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:border-emerald-600"
-                        />
-                        <button
-                          type="button"
-                          onClick={addSlot}
-                          className="px-3 py-1.5 bg-[#056B38] text-white text-xs font-semibold rounded-lg shadow-2xs"
-                        >
-                          Add
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowAddSlot(false)}
-                          className="px-3 py-1.5 border border-gray-300 text-gray-600 text-xs rounded-lg"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 4: Payments */}
+            {/* TAB 3: Payments */}
             {activeTab === 'payments' && (
               <div className="space-y-6">
                 <div>
                   <h2 className="text-sm font-bold text-gray-900">Payment methods & rules</h2>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Enable and configure payment options shown at customer checkout
+                    Prepaid online payments & UPI verification configurations
                   </p>
                 </div>
 
                 <div className="space-y-4 max-w-xl">
-                  {/* Cash on Delivery (COD) */}
-                  <div className="p-4 rounded-xl border border-gray-200 bg-white space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-xs font-bold text-gray-900">
-                          Cash on Delivery (COD)
-                        </div>
-                        <div className="text-[11px] text-gray-500">
-                          Customers pay cash or UPI directly to delivery partner upon receipt
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setCodEnabled(!codEnabled)}
-                        className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${
-                          codEnabled
-                            ? 'bg-[#056B38] text-white shadow-2xs'
-                            : 'border border-gray-300 bg-white'
-                        }`}
-                      >
-                        {codEnabled && <Check size={14} strokeWidth={3} />}
-                      </button>
+                  {/* Prepaid Online notice */}
+                  <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/50 space-y-1">
+                    <div className="text-xs font-bold text-emerald-900">
+                      100% Prepaid Online Store
                     </div>
-
-                    {codEnabled && (
-                      <div className="pt-2 border-t border-gray-100 flex items-center gap-3">
-                        <label className="text-xs text-gray-600 font-medium">
-                          Maximum COD order limit:
-                        </label>
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs text-gray-500">₹</span>
-                          <input
-                            type="number"
-                            value={codMaxLimit}
-                            onChange={(e) => setCodMaxLimit(e.target.value)}
-                            className="w-24 px-2 py-1 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-emerald-600"
-                          />
-                        </div>
-                      </div>
-                    )}
+                    <div className="text-[11px] text-emerald-700 leading-relaxed">
+                      Cash on Delivery (COD) is permanently disabled. All orders must be paid online via UPI or card prior to dispatch.
+                    </div>
                   </div>
 
                   {/* UPI Manual Verification */}
@@ -1157,7 +937,14 @@ export default function Settings() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {rootCategories.map((cat) => {
+                      {rootCategories.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="py-8 text-center text-gray-400">
+                            No categories found in the database.
+                          </td>
+                        </tr>
+                      ) : (
+                        rootCategories.map((cat) => {
                         const currentRate =
                           categoryTaxRates[cat.id] ||
                           cat.gstRate ||
@@ -1202,7 +989,8 @@ export default function Settings() {
                             </td>
                           </tr>
                         );
-                      })}
+                      })
+                    )}
                     </tbody>
                   </table>
                 </div>
@@ -1370,49 +1158,57 @@ export default function Settings() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {staffList.map((st) => {
-                        let roleBadge = 'bg-[#E6F4EA] text-[#0A7C47]';
-                        if (st.role === 'Manager') roleBadge = 'bg-[#E8F0FE] text-[#1A73E8]';
-                        else if (st.role === 'Packer') roleBadge = 'bg-[#FEF7E0] text-[#B06000]';
-                        else if (st.role === 'Delivery') roleBadge = 'bg-[#F3E8FD] text-[#7E22CE]';
-                        else if (st.role === 'Cashier') roleBadge = 'bg-[#E0F2FE] text-[#0369A1]';
+                      {staffList.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-gray-400">
+                            No staff members added yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        staffList.map((st) => {
+                          let roleBadge = 'bg-[#E6F4EA] text-[#0A7C47]';
+                          if (st.role === 'Manager') roleBadge = 'bg-[#E8F0FE] text-[#1A73E8]';
+                          else if (st.role === 'Packer') roleBadge = 'bg-[#FEF7E0] text-[#B06000]';
+                          else if (st.role === 'Delivery') roleBadge = 'bg-[#F3E8FD] text-[#7E22CE]';
+                          else if (st.role === 'Cashier') roleBadge = 'bg-[#E0F2FE] text-[#0369A1]';
 
-                        return (
-                          <tr key={st.id} className="hover:bg-gray-50/40 transition-colors">
-                            <td className="py-3.5 px-1">
-                              <div className="font-bold text-gray-900 text-xs sm:text-sm">
-                                {st.name}
-                              </div>
-                              <div className="text-[11px] text-gray-500">{st.email}</div>
-                            </td>
-                            <td className="py-3.5 px-4">
-                              <span
-                                className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold ${roleBadge}`}
-                              >
-                                {st.role}
-                              </span>
-                            </td>
-                            <td className="py-3.5 px-4 text-xs text-gray-700">
-                              {st.canAccess || 'Standard access'}
-                            </td>
-                            <td className="py-3.5 px-4 text-xs text-gray-500">
-                              {st.lastActive || 'Today'}
-                            </td>
-                            <td className="py-3.5 px-2 text-right">
-                              {!st.isOwner && st.role !== 'Owner' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteStaff(st.id, st)}
-                                  className="p-1 text-gray-400 hover:text-red-600 rounded transition-colors"
-                                  title="Remove staff member"
+                          return (
+                            <tr key={st.id} className="hover:bg-gray-50/40 transition-colors">
+                              <td className="py-3.5 px-1">
+                                <div className="font-bold text-gray-900 text-xs sm:text-sm">
+                                  {st.name}
+                                </div>
+                                <div className="text-[11px] text-gray-500">{st.email}</div>
+                              </td>
+                              <td className="py-3.5 px-4">
+                                <span
+                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold ${roleBadge}`}
                                 >
-                                  <Trash2 size={14} />
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                                  {st.role}
+                                </span>
+                              </td>
+                              <td className="py-3.5 px-4 text-xs text-gray-700">
+                                {st.canAccess || 'Standard access'}
+                              </td>
+                              <td className="py-3.5 px-4 text-xs text-gray-500">
+                                {st.lastActive || 'Today'}
+                              </td>
+                              <td className="py-3.5 px-2 text-right">
+                                {!st.isOwner && st.role !== 'Owner' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteStaff(st.id, st)}
+                                    className="p-1 text-gray-400 hover:text-red-600 rounded transition-colors"
+                                    title="Remove staff member"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1626,7 +1422,7 @@ export default function Settings() {
             </label>
             <input
               type="email"
-              placeholder="staff@supamart.in"
+              placeholder="staff@mstraders.in"
               value={newStaffEmail}
               onChange={(e) => setNewStaffEmail(e.target.value)}
               className="w-full px-3.5 py-2 rounded-xl border border-gray-200 text-xs text-gray-800 focus:outline-none focus:border-emerald-600"

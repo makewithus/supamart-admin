@@ -56,11 +56,13 @@ export default function Login() {
         {/* Top Logo + Brand */}
         <div className="flex items-center gap-3">
           <img
-            src="/branding/ms-traders-symbol-small-colour.svg"
+            src="/branding/ms-traders-horizontal-reversed.svg"
             alt="MS Traders"
-            className="w-8 h-8 object-contain shrink-0"
+            className="h-10 w-auto object-contain"
           />
-          <span className="text-base font-bold text-white tracking-tight">MS Traders</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-200 bg-white/10 px-2 py-0.5 rounded-full border border-white/15">
+            Admin
+          </span>
         </div>
 
         {/* Bottom Headline, Subtitle, Divider & Footer */}
@@ -74,9 +76,17 @@ export default function Login() {
             </p>
           </div>
 
-          <div className="pt-6 border-t border-[#165632] flex items-center justify-between text-xs text-[#7DAF93] font-medium">
-            <span>Staff access only</span>
-            <span>support: [grievance email]</span>
+          <div className="pt-6 border-t border-[#165632] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-[#7DAF93] font-medium">
+            <span>Staff access only · Menamkulam</span>
+            <div className="flex items-center gap-1.5">
+              <span>Support / Grievance:</span>
+              <a
+                href="mailto:hassanramla31@gmail.com"
+                className="text-white hover:underline transition-all font-semibold"
+              >
+                hassanramla31@gmail.com
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -87,11 +97,13 @@ export default function Login() {
           {/* Mobile Top Brand Header */}
           <div className="flex items-center gap-2.5 mb-8 lg:hidden">
             <img
-              src="/branding/ms-traders-symbol-small-colour.svg"
+              src="/branding/ms-traders-horizontal-colour.svg"
               alt="MS Traders"
-              className="w-7 h-7 object-contain shrink-0"
+              className="h-8 w-auto object-contain shrink-0"
             />
-            <span className="text-sm font-bold text-gray-900">MS Traders Admin</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#0A7C47] bg-[#E6F4EA] px-2 py-0.5 rounded-full border border-[#0A7C47]/20">
+              Admin
+            </span>
           </div>
 
           {/* Heading */}

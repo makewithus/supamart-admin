@@ -43,63 +43,30 @@ export default function MSClub() {
             id: d.id,
             name: u.name || 'Member',
             email: u.email || '',
+            rawValidUntil: u.msClubValidUntil || 0,
+            rawSaved: u.msClubSavedAmount || 0,
             since: u.msClubJoinedAt
               ? new Date(u.msClubJoinedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-              : '2 Oct 2026',
+              : '—',
             renews: u.msClubValidUntil
               ? new Date(u.msClubValidUntil).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-              : '2 Nov',
-            saved: u.msClubSavedAmount ? `₹${u.msClubSavedAmount}` : '₹180',
+              : '—',
+            saved: u.msClubSavedAmount ? `₹${u.msClubSavedAmount}` : '₹0',
             status: u.msClubStatus || 'Active',
           };
         });
 
-        // If no members in database yet, provide default demo member as seen in designer screenshot
-        if (list.length === 0) {
-          setMembers([
-            {
-              id: 'demo-1',
-              name: 'Krrish Singhal',
-              email: 'dev@mwus.in',
-              since: '2 Oct 2026',
-              renews: '2 Nov',
-              saved: '₹180',
-              status: 'Active',
-            },
-          ]);
-        } else {
-          setMembers(list);
-        }
+        setMembers(list);
         setLoading(false);
       }, (err) => {
         console.error('Error fetching members:', err);
-        setMembers([
-          {
-            id: 'demo-1',
-            name: 'Krrish Singhal',
-            email: 'dev@mwus.in',
-            since: '2 Oct 2026',
-            renews: '2 Nov',
-            saved: '₹180',
-            status: 'Active',
-          },
-        ]);
+        setMembers([]);
         setLoading(false);
       });
 
       return () => unsub();
     } catch (_) {
-      setMembers([
-        {
-          id: 'demo-1',
-          name: 'Krrish Singhal',
-          email: 'dev@mwus.in',
-          since: '2 Oct 2026',
-          renews: '2 Nov',
-          saved: '₹180',
-          status: 'Active',
-        },
-      ]);
+      setMembers([]);
       setLoading(false);
     }
   }, []);
@@ -126,6 +93,12 @@ export default function MSClub() {
 
   const activeCount = members.length;
   const monthlyRevenue = activeCount * (Number(monthlyPrice) || 49);
+  const renewsIn7Days = members.filter((m) => {
+    const now = Date.now();
+    const sevenDays = now + 7 * 24 * 60 * 60 * 1000;
+    return m.rawValidUntil >= now && m.rawValidUntil <= sevenDays;
+  }).length;
+  const deliveryFeesWaived = members.reduce((sum, m) => sum + (m.rawSaved || 0), 0);
 
   return (
     <div className="p-6 md:p-8 space-y-6 w-full">
@@ -156,14 +129,14 @@ export default function MSClub() {
         {/* Card 3 */}
         <div className="bg-white rounded-xl border border-gray-200/90 p-5 shadow-2xs">
           <p className="text-xs font-semibold text-gray-600">Renewals in 7 days</p>
-          <p className="text-3xl font-extrabold text-gray-900 mt-1">1</p>
+          <p className="text-3xl font-extrabold text-gray-900 mt-1">{renewsIn7Days}</p>
           <p className="text-xs text-gray-400 mt-1">Reminder sent automatically</p>
         </div>
 
         {/* Card 4 */}
         <div className="bg-white rounded-xl border border-gray-200/90 p-5 shadow-2xs">
           <p className="text-xs font-semibold text-gray-600">Delivery fees waived</p>
-          <p className="text-3xl font-extrabold text-gray-900 mt-1">₹180</p>
+          <p className="text-3xl font-extrabold text-gray-900 mt-1">₹{deliveryFeesWaived}</p>
           <p className="text-xs text-gray-400 mt-1">This month</p>
         </div>
       </div>
@@ -187,19 +160,30 @@ export default function MSClub() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {members.map((m) => (
-                  <tr key={m.id} className="hover:bg-gray-50/70 transition-colors">
-                    <td className="px-5 py-4 font-bold text-gray-900 text-sm">{m.name}</td>
-                    <td className="px-5 py-4 text-gray-500 text-sm">{m.since}</td>
-                    <td className="px-5 py-4 text-gray-500 text-sm">{m.renews}</td>
-                    <td className="px-5 py-4 font-bold text-gray-900 text-sm">{m.saved}</td>
-                    <td className="px-5 py-4">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#e6f4ea] text-[#137333]">
-                        {m.status}
-                      </span>
+                {members.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-12 text-center text-gray-400">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <p className="font-semibold text-gray-500 text-sm">No MS Club members yet</p>
+                        <p className="text-xs text-gray-400">Customers who subscribe to MS Club will appear here.</p>
+                      </div>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  members.map((m) => (
+                    <tr key={m.id} className="hover:bg-gray-50/70 transition-colors">
+                      <td className="px-5 py-4 font-bold text-gray-900 text-sm">{m.name}</td>
+                      <td className="px-5 py-4 text-gray-500 text-sm">{m.since}</td>
+                      <td className="px-5 py-4 text-gray-500 text-sm">{m.renews}</td>
+                      <td className="px-5 py-4 font-bold text-gray-900 text-sm">{m.saved}</td>
+                      <td className="px-5 py-4">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#e6f4ea] text-[#137333]">
+                          {m.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
