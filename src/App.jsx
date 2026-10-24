@@ -6,6 +6,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Toaster } from 'react-hot-toast';
 import { auth } from './config/firebase';
 import Navbar from './components/Navbar';
+import TopBar from './components/TopBar';
 import Loader from './components/ui/Loader';
 import Login from './pages/Login';
 import NewOrderBanner from './components/NewOrderBanner';
@@ -41,10 +42,14 @@ const DeliveryPartners = lazy(() => import('./pages/DeliveryPartners'));
 const Categories       = lazy(() => import('./pages/Categories'));
 const Brands           = lazy(() => import('./pages/Brands'));
 const Customers        = lazy(() => import('./pages/Customers'));
+const MSClub           = lazy(() => import('./pages/MSClub'));
+const PushNotifications = lazy(() => import('./pages/PushNotifications'));
+const Reports          = lazy(() => import('./pages/Reports'));
 const Offers           = lazy(() => import('./pages/Offers'));
 const Settings         = lazy(() => import('./pages/Settings'));
 const RefundRequests   = lazy(() => import('./pages/RefundRequests'));
 const Issues           = lazy(() => import('./pages/Issues'));
+const Feedback         = lazy(() => import('./pages/Feedback'));
 
 function PageFallback() {
   return (
@@ -58,13 +63,10 @@ function AppShell() {
   const navigate = useNavigate();
   const [orderAlert, setOrderAlert] = useState(null);
   const [showEnablePrompt, setShowEnablePrompt] = useState(shouldShowEnablePrompt);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useNewOrderAlert(true, useCallback((order) => setOrderAlert(order), []));
 
-  // The audio unlock itself doesn't need its own visible prompt — it happens the moment
-  // the admin clicks/taps/types anywhere on the dashboard, which happens naturally within
-  // seconds of opening it. Only Notification permission needs an explicit ask (see
-  // shouldShowEnablePrompt above).
   useEffect(() => {
     autoUnlockOnFirstInteraction();
   }, []);
@@ -80,39 +82,47 @@ function AppShell() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-dvh bg-neutral-50 overflow-hidden">
-      <Navbar />
-      <main className="flex-1 min-w-0 min-h-0 overflow-auto">
-        {orderAlert ? (
-          <NewOrderBanner order={orderAlert} onView={handleViewOrder} onDismiss={() => setOrderAlert(null)} />
-        ) : (
-          <EnableAlertsPrompt
-            show={showEnablePrompt}
-            onEnabled={() => setShowEnablePrompt(false)}
-            onDismiss={dismissEnablePrompt}
-          />
-        )}
-        <Suspense fallback={<PageFallback />}>
-          <Routes>
-            <Route path="/"                   element={<Dashboard />} />
-            <Route path="/dashboard"          element={<Dashboard />} />
-            <Route path="/products"           element={<Products />}  />
-            <Route path="/orders"             element={<Orders />}    />
-            <Route path="/delivery-partners"  element={<DeliveryPartners />} />
-            <Route path="/accounts"           element={<Accounts />}  />
-            <Route path="/refunds"            element={<RefundRequests />} />
-            <Route path="/issues"             element={<Issues />} />
-            <Route path="/categories"         element={<Categories />}/>
-            <Route path="/brands"             element={<Brands />}    />
-            <Route path="/customers"          element={<Customers />} />
-            <Route path="/offers"             element={<Offers />}    />
-            <Route path="/settings"           element={<Settings />}  />
-            {/* Signed-in admin landing on the login URL (e.g. a stale bookmark) — send
-                them to the dashboard instead of showing nothing (no route matches here). */}
-            <Route path="/admin-login" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
-      </main>
+    <div className="flex h-screen bg-[#F5F6F4] overflow-hidden">
+      <Navbar mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        <TopBar onOpenMobileMenu={() => setMobileMenuOpen(true)} />
+        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto bg-[#F5F6F4]">
+          {orderAlert ? (
+            <NewOrderBanner order={orderAlert} onView={handleViewOrder} onDismiss={() => setOrderAlert(null)} />
+          ) : (
+            <EnableAlertsPrompt
+              show={showEnablePrompt}
+              onEnabled={() => setShowEnablePrompt(false)}
+              onDismiss={dismissEnablePrompt}
+            />
+          )}
+          <Suspense fallback={<PageFallback />}>
+            <Routes>
+              <Route path="/"                   element={<Dashboard />} />
+              <Route path="/dashboard"          element={<Dashboard />} />
+              <Route path="/products"           element={<Products />}  />
+              <Route path="/orders"             element={<Orders />}    />
+              <Route path="/deliveries"         element={<DeliveryPartners />} />
+              <Route path="/delivery-partners"  element={<DeliveryPartners />} />
+              <Route path="/payments"           element={<Accounts />}  />
+              <Route path="/accounts"           element={<Accounts />}  />
+              <Route path="/refunds"            element={<RefundRequests />} />
+              <Route path="/issues"             element={<Issues />} />
+              <Route path="/feedback"           element={<Feedback />} />
+              <Route path="/ratings"            element={<Feedback />} />
+              <Route path="/categories"         element={<Categories />}/>
+              <Route path="/brands"             element={<Brands />}    />
+              <Route path="/customers"          element={<Customers />} />
+              <Route path="/ms-club"            element={<MSClub />} />
+              <Route path="/offers"             element={<Offers />}    />
+              <Route path="/push-notifications" element={<PushNotifications />}  />
+              <Route path="/reports"            element={<Reports />} />
+              <Route path="/settings"           element={<Settings />}  />
+              <Route path="/admin-login" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </main>
+      </div>
     </div>
   );
 }

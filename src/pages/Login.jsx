@@ -1,34 +1,34 @@
-import BrandMark from '../components/BrandMark';
 import React, { useState } from 'react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { Mail, Lock, Eye, EyeOff, Zap, AlertCircle } from 'lucide-react';
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { AlertCircle } from 'lucide-react';
 import { auth } from '../config/firebase';
-import Button from '../components/ui/Button';
-import Input from '../components/ui/Input';
+import toast from 'react-hot-toast';
 
 export default function Login() {
-  const [email, setEmail]       = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPw, setShowPw]     = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [keepSignedIn, setKeepSignedIn] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      // Stamp this session with the running build so a later redeploy invalidates
-      // it (see App.jsx). Set before sign-in to avoid racing the auth listener.
-      localStorage.setItem('ms_admin_build_id', __BUILD_ID__);
+      // Stamp session with build id so stale deployments don't linger
+      if (typeof __BUILD_ID__ !== 'undefined') {
+        localStorage.setItem('ms_admin_build_id', __BUILD_ID__);
+      }
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err) {
       const msgs = {
-        'auth/invalid-credential':      'Incorrect email or password.',
-        'auth/user-not-found':          'No account found for this email.',
-        'auth/wrong-password':          'Incorrect password.',
-        'auth/too-many-requests':       'Too many attempts. Try again later.',
-        'auth/network-request-failed':  'Network error. Check your connection.',
+        'auth/invalid-credential': 'Incorrect email or password.',
+        'auth/user-not-found': 'No account found for this email.',
+        'auth/wrong-password': 'Incorrect password.',
+        'auth/too-many-requests': 'Too many attempts. Sign-in is locked for 15 minutes.',
+        'auth/network-request-failed': 'Network error. Check your connection.',
       };
       setError(msgs[err.code] || 'Sign in failed. Please try again.');
     } finally {
@@ -36,121 +36,152 @@ export default function Login() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      toast.error('Please enter your email address first.');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      toast.success('Password reset email sent to your inbox.');
+    } catch (err) {
+      toast.error('Could not send reset email. Contact store owner.');
+    }
+  };
+
   return (
-    <div className="flex min-h-dvh bg-neutral-50 font-sans">
-      {/* ── Left brand panel ── */}
-      <div className="hidden lg:flex w-2/5 bg-brand-green flex-col justify-between p-10 relative overflow-hidden">
-        {/* Decorative shapes */}
-        <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-secondary-300/10" />
-        <div className="absolute bottom-24 -left-12 w-48 h-48 rounded-full bg-tertiary-200/10" />
-        <div className="absolute bottom-0 right-0 w-40 h-40 bg-secondary-300/5 rounded-tl-[80px]" />
+    <div className="flex min-h-screen bg-[#F9FAFB] font-sans antialiased">
+      {/* ── Left Deep Green Brand Panel ── */}
+      <div className="hidden lg:flex lg:w-[44%] bg-[#084223] flex-col justify-between p-12 lg:p-16 text-white relative">
+        {/* Top Logo + Brand */}
+        <div className="flex items-center gap-3">
+          <img
+            src="/branding/ms-traders-symbol-small-colour.svg"
+            alt="MS Traders"
+            className="w-8 h-8 object-contain shrink-0"
+          />
+          <span className="text-base font-bold text-white tracking-tight">MS Traders</span>
+        </div>
 
-        {/* Brand mark */}
-        <div className="flex items-center gap-3 relative z-10">
-          <BrandMark reversed />
+        {/* Bottom Headline, Subtitle, Divider & Footer */}
+        <div className="space-y-6">
           <div>
-            <p className="text-white font-bold text-xl leading-none">Admin</p>
-            <p className="text-white/80 text-xs mt-0.5">Console</p>
+            <h1 className="text-3xl lg:text-[40px] font-extrabold text-white leading-[1.18] tracking-tight">
+              Run the store from one<br />place.
+            </h1>
+            <p className="text-sm text-[#A7D3B9] leading-relaxed mt-4 max-w-sm">
+              Orders, payments, deliveries and stock for the Menamkulam store.
+            </p>
           </div>
-        </div>
 
-        {/* Center art */}
-        <div className="relative z-10 space-y-4">
-          <div className="flex gap-4">
-            <div className="w-24 h-24 rounded-2xl bg-secondary-300/20 border border-secondary-300/20" />
-            <div className="w-16 h-16 rounded-xl bg-tertiary-200/20 border border-tertiary-200/20 self-end" />
+          <div className="pt-6 border-t border-[#165632] flex items-center justify-between text-xs text-[#7DAF93] font-medium">
+            <span>Staff access only</span>
+            <span>support: [grievance email]</span>
           </div>
-          <div className="flex gap-3 items-end">
-            <div className="w-12 h-20 rounded-xl bg-white/5 border border-white/10" />
-            <div className="w-20 h-12 rounded-xl bg-secondary-300/15 border border-secondary-300/20" />
-            <div className="w-10 h-16 rounded-lg bg-tertiary-200/15 border border-tertiary-200/20" />
-          </div>
-        </div>
-
-        {/* Tagline */}
-        <div className="relative z-10">
-          <p className="text-white font-semibold text-xl leading-snug mb-2">
-            The smarter way<br />to run your store.
-          </p>
-          <p className="text-white/80 text-sm leading-relaxed">
-            Real-time orders, inventory, analytics — all in one place.
-          </p>
         </div>
       </div>
 
-      {/* ── Right form panel ── */}
-      <div className="flex-1 min-w-0 flex items-center justify-center px-4 py-8 sm:px-6">
-        <div className="w-full max-w-md">
-          {/* Mobile brand mark */}
-          <div className="flex items-center gap-2.5 mb-10 lg:hidden">
-            <BrandMark />
-            <p className="text-primary-900 font-bold text-lg">Admin</p>
+      {/* ── Right Form Panel ── */}
+      <div className="flex-1 flex items-center justify-center px-6 py-12 sm:px-10">
+        <div className="w-full max-w-sm">
+          {/* Mobile Top Brand Header */}
+          <div className="flex items-center gap-2.5 mb-8 lg:hidden">
+            <img
+              src="/branding/ms-traders-symbol-small-colour.svg"
+              alt="MS Traders"
+              className="w-7 h-7 object-contain shrink-0"
+            />
+            <span className="text-sm font-bold text-gray-900">MS Traders Admin</span>
           </div>
 
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-primary-900 mb-1.5">Welcome back</h1>
-            <p className="text-neutral-400 text-sm">Sign in to your admin account to continue.</p>
+          {/* Heading */}
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Sign in</h2>
+            <p className="text-xs text-gray-500 mt-1">Use the email your store owner invited.</p>
           </div>
 
           {error && (
-            <div className="flex items-start gap-3 bg-red-50 border border-red-100 text-red-600 rounded-xl px-4 py-3 mb-6 text-sm">
-              <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-              {error}
+            <div className="flex items-start gap-2.5 bg-red-50 border border-red-100 text-red-600 rounded-xl px-3.5 py-2.5 mb-5 text-xs font-medium">
+              <AlertCircle size={15} className="mt-0.5 shrink-0" />
+              <span>{error}</span>
             </div>
           )}
 
           <form onSubmit={handleLogin} className="space-y-4">
-            <Input
-              type="email"
-              label="Email address"
-              icon={Mail}
-              placeholder="admin@mstraders.in"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-            />
+            {/* Email Field */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">Email</label>
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@mstraders.in"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all"
+              />
+            </div>
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Password</label>
-              <div className="relative">
-                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none">
-                  <Lock size={16} strokeWidth={2} />
-                </div>
+            {/* Password Field */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-semibold text-gray-700">Password</label>
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  className="text-xs font-semibold text-[#0A7C47] hover:underline cursor-pointer"
+                >
+                  Forgot password?
+                </button>
+              </div>
+
+              <div className="relative flex items-center">
                 <input
-                  type={showPw ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  type={showPassword ? 'text' : 'password'}
                   required
                   autoComplete="current-password"
-                  className="w-full bg-neutral-50 border border-neutral-200 text-primary-900 rounded-xl py-3 pl-10 pr-11 text-sm font-medium
-                    placeholder:text-neutral-400 focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10
-                    transition-all duration-150"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password"
+                  className="w-full pl-3.5 pr-14 py-2.5 rounded-xl border border-gray-200 bg-white text-xs sm:text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPw(!showPw)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 transition-colors"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 text-xs font-semibold text-gray-500 hover:text-gray-800 transition-colors"
                 >
-                  {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {showPassword ? 'Hide' : 'Show'}
                 </button>
               </div>
             </div>
 
-            <Button
+            {/* Checkbox */}
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                id="keep-signed-in"
+                type="checkbox"
+                checked={keepSignedIn}
+                onChange={(e) => setKeepSignedIn(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-[#0A7C47] focus:ring-[#0A7C47] cursor-pointer"
+              />
+              <label htmlFor="keep-signed-in" className="text-xs text-gray-600 cursor-pointer select-none">
+                Keep me signed in on this computer
+              </label>
+            </div>
+
+            {/* Sign in Button */}
+            <button
               type="submit"
-              variant="primary"
-              size="lg"
-              loading={loading}
-              className="w-full mt-2"
+              disabled={loading}
+              className="w-full mt-2 py-2.5 rounded-xl bg-[#0A7C47] hover:bg-[#08683A] active:bg-[#06542F] text-white text-xs sm:text-sm font-semibold transition-colors shadow-2xs disabled:opacity-50"
             >
-              {loading ? 'Signing in…' : 'Sign In'}
-            </Button>
+              {loading ? 'Signing in…' : 'Sign in'}
+            </button>
           </form>
 
-          <p className="text-center text-xs text-neutral-300 mt-8">
-            MS Traders Admin · Restricted access
+          {/* Security lock note */}
+          <p className="text-[11px] text-gray-400 text-center mt-5">
+            After 5 wrong attempts, sign-in is locked for 15 minutes.
           </p>
         </div>
       </div>

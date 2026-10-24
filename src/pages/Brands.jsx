@@ -1,164 +1,246 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Tag, Plus, Edit2, Trash2, Search } from 'lucide-react';
+import { Plus, Search, Sparkles } from 'lucide-react';
 import { db } from '../config/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import Card from '../components/ui/Card';
-import Badge from '../components/ui/Badge';
-import Button from '../components/ui/Button';
-import Loader from '../components/ui/Loader';
-import EmptyState from '../components/ui/EmptyState';
-import PageHeader from '../components/ui/PageHeader';
-import Modal from '../components/ui/Modal';
-import ConfirmModal from '../components/ui/ConfirmModal';
 import BrandForm from '../components/BrandForm';
 import { apiDel } from '../services/api';
 import toast from 'react-hot-toast';
 import brandLogos from '../utils/brandLogos';
-import { optimizeCloudinaryUrl } from '../utils/cloudinaryImage';
+import productImages from '../utils/productImages';
+
+// Curated pastel color combinations for brands without an image
+const PASTEL_PALETTE = [
+  { bg: 'bg-[#e6f4ea]', text: 'text-[#137333]' }, // mint green
+  { bg: 'bg-[#fef7e0]', text: 'text-[#b06000]' }, // warm amber
+  { bg: 'bg-[#e8f0fe]', text: 'text-[#1a73e8]' }, // soft blue
+  { bg: 'bg-[#fce8e6]', text: 'text-[#c5221f]' }, // soft rose
+  { bg: 'bg-[#feefe3]', text: 'text-[#c26401]' }, // soft peach
+];
+
+function getBrandInitial(name = '') {
+  const trimmed = name.trim();
+  const parts = trimmed.split(/\s+/);
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return (trimmed[0] || 'B').toUpperCase();
+}
+
+function getBrandColor(name = '') {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const idx = Math.abs(hash) % PASTEL_PALETTE.length;
+  return PASTEL_PALETTE[idx];
+}
 
 export default function Brands() {
   const [brands, setBrands] = useState([]);
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editingBrand, setEditingBrand] = useState(null);
-  const [deletingId, setDeletingId] = useState(null);
 
+  // Subscribe to brands
   useEffect(() => {
     const q = query(collection(db, 'brands'), orderBy('order', 'asc'));
-    const unsub = onSnapshot(q, (snap) => {
-      setBrands(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      setLoading(false);
-    }, (err) => {
-      console.error(err);
-      toast.error('Failed to load brands');
-      setLoading(false);
-    });
-
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setBrands(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setLoading(false);
+      },
+      (err) => {
+        console.error(err);
+        toast.error('Failed to load brands');
+        setLoading(false);
+      }
+    );
     return () => unsub();
   }, []);
 
-  const performDelete = async () => {
-    if (!deletingId) return;
-    try {
-      await apiDel(`/brands/${deletingId}`);
-      toast.success('Brand deleted successfully.');
-    } catch (err) {
-      toast.error(`Failed to delete brand: ${err.message}`);
-    } finally {
-      setDeletingId(null);
-    }
+  // Subscribe to products to compute real product counts and resolve system product images
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, 'products'),
+      (snap) => {
+        setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      () => {}
+    );
+    return () => unsub();
+  }, []);
+
+  // Compute product counts and map first available product image per brand
+  const { productCountByBrand, productImageByBrand } = useMemo(() => {
+    const countMap = {};
+    const imgMap = {};
+
+    products.forEach((p) => {
+      const bKey = p.brand || p.brandName || p.brandId;
+      if (bKey) {
+        countMap[bKey] = (countMap[bKey] || 0) + 1;
+
+        if (!imgMap[bKey]) {
+          const pImgs = Array.isArray(p.images) ? p.images : [];
+          const validImg = pImgs.find((img) => {
+            const u = typeof img === 'string' ? img : img?.url;
+            return u && !u.includes('cloudinary.com/demo/');
+          });
+          const resolved = (typeof validImg === 'string' ? validImg : validImg?.url) || productImages[p.name];
+          if (resolved) {
+            imgMap[bKey] = resolved;
+          }
+        }
+      }
+    });
+
+    return { productCountByBrand: countMap, productImageByBrand: imgMap };
+  }, [products]);
+
+  const filtered = useMemo(() => {
+    return brands.filter(
+      (b) => !search || b.name?.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [brands, search]);
+
+  const performDelete = async (brandId) => {
+    if (!brandId) return;
+    await apiDel(`/brands/${brandId}`);
+    toast.success('Brand deleted successfully');
   };
 
   const handleAddClick = () => {
     setEditingBrand(null);
-    setIsModalOpen(true);
+    setIsDrawerOpen(true);
   };
 
   const handleEditClick = (brand) => {
     setEditingBrand(brand);
-    setIsModalOpen(true);
+    setIsDrawerOpen(true);
   };
 
-  const filtered = useMemo(
-    () => brands.filter((b) => !search || b.name?.toLowerCase().includes(search.toLowerCase())),
-    [brands, search]
-  );
-
   return (
-    <div className="p-4 sm:p-6 lg:p-8 bg-neutral-50 min-h-screen">
-      <PageHeader title="Brands" subtitle={`${brands.length} brands`}>
-        <Button variant="primary" onClick={handleAddClick}>
-          <Plus size={16} strokeWidth={2.5} /> Add Brand
-        </Button>
-      </PageHeader>
-
-      {/* With 80+ brands, browsing without a way to jump to one by name was the gap here —
-          every other list page in the portal has a search box, this one didn't. */}
-      {!loading && brands.length > 0 && (
-        <Card className="mb-5">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-              <input
-                type="text"
-                placeholder="Search brands…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 pr-4 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900
-                  placeholder:text-neutral-400 focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10 transition-all w-64"
-              />
-            </div>
-            <Badge variant="neutral">{filtered.length} of {brands.length}</Badge>
+    <div className="p-6 lg:p-8 space-y-6 w-full animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Brands</h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {brands.length} brands · click any brand to edit details or select product images
+          </p>
+        </div>
+        <div className="flex items-center gap-3 self-start sm:self-auto">
+          {/* Search Input */}
+          <div className="relative">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search brands..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-48 sm:w-60 pl-9 pr-3.5 py-2 text-sm text-gray-800 bg-white border border-gray-200 rounded-lg placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0a7c47] focus:border-[#0a7c47] shadow-2xs"
+            />
           </div>
-        </Card>
-      )}
+          {/* Add brand button */}
+          <button
+            onClick={handleAddClick}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0a7c47] hover:bg-[#086338] text-white text-sm font-semibold rounded-lg transition-colors shadow-2xs shrink-0 cursor-pointer"
+          >
+            <Plus size={16} strokeWidth={2.5} />
+            <span>Add brand</span>
+          </button>
+        </div>
+      </div>
 
-      {loading ? (
-        <Card><Loader text="Loading brands…" /></Card>
-      ) : brands.length === 0 ? (
-        <Card><EmptyState icon={Tag} title="No brands yet" message="Add your first brand so products can be filtered by it." action="Add Brand" onAction={handleAddClick} /></Card>
-      ) : filtered.length === 0 ? (
-        <Card><EmptyState icon={Search} title="No brands found" message="Try a different search term." /></Card>
+      {/* Brands Grid */}
+      {filtered.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200/90 p-12 text-center text-sm text-gray-500 shadow-2xs">
+          {search ? 'No brands match your search.' : 'No brands created yet.'}
+        </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-5">
-          {filtered.map((b, i) => (
-            <div
-              key={b.id}
-              onClick={() => handleEditClick(b)}
-              className="bg-white rounded-2xl shadow-card p-4 animate-fade-up opacity-0-init hover:shadow-card-hover transition-shadow cursor-pointer group"
-              style={{ animationDelay: `${i * 40}ms` }}
-            >
-              <div className="w-full aspect-square rounded-xl bg-secondary-50 mb-3 overflow-hidden flex items-center justify-center">
-                {/* An admin-uploaded logo (b.logoUrl, a live Firestore field) always
-                    overrides the bundled default -- same priority as product/category
-                    images -- so editing a brand's logo here actually shows up. */}
-                {b.logoUrl
-                  ? <img src={optimizeCloudinaryUrl(b.logoUrl, 200)} alt={b.name} loading="lazy" decoding="async" className="w-full h-full object-contain p-2" />
-                  : brandLogos[b.name]
-                  ? <img src={brandLogos[b.name]} alt={b.name} loading="lazy" decoding="async" className="w-full h-full object-contain p-2" />
-                  : <Tag size={24} className="text-neutral-300" />
-                }
-              </div>
-              <p className="font-bold text-primary-900 text-xs leading-snug text-center line-clamp-2">{b.name}</p>
-              <div className="flex items-center justify-between mt-3">
-                <Badge variant={b.isActive === false ? 'neutral' : 'success'}>
-                  {b.isActive === false ? 'Hidden' : 'Active'}
-                </Badge>
-                <div className="flex items-center gap-1">
-                  <button onClick={(e) => { e.stopPropagation(); handleEditClick(b); }} className="p-1.5 text-neutral-400 hover:text-primary-900 hover:bg-neutral-100 rounded-lg transition-colors">
-                    <Edit2 size={14} />
-                  </button>
-                  <button onClick={(e) => { e.stopPropagation(); setDeletingId(b.id); }} className="p-1.5 text-neutral-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                    <Trash2 size={14} />
-                  </button>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
+          {filtered.map((b) => {
+            const initial = getBrandInitial(b.name);
+            const color = getBrandColor(b.name);
+            const count =
+              productCountByBrand[b.id] ||
+              productCountByBrand[b.name] ||
+              b.productCount ||
+              0;
+
+            // Resolve brand image from:
+            // 1. Explicit brand logoUrl
+            // 2. Bundled brand logos
+            // 3. System product images linked to this brand
+            const brandImg =
+              b.logoUrl ||
+              brandLogos[b.name] ||
+              productImageByBrand[b.name] ||
+              productImageByBrand[b.id] ||
+              null;
+
+            return (
+              <div
+                key={b.id}
+                onClick={() => handleEditClick(b)}
+                className="bg-white rounded-xl border border-gray-200/90 p-3.5 flex items-center gap-3 shadow-2xs hover:border-[#0a7c47]/50 hover:shadow-xs transition-all cursor-pointer group"
+              >
+                {/* Brand / Product Image Tile */}
+                {brandImg ? (
+                  <div className="w-11 h-11 rounded-xl overflow-hidden bg-white border border-gray-100 flex items-center justify-center shrink-0 p-1 shadow-2xs group-hover:border-[#0a7c47]/30 transition-all">
+                    <img
+                      src={brandImg}
+                      alt={b.name}
+                      className="w-full h-full object-contain rounded-lg"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.nextSibling.style.display = 'flex';
+                      }}
+                    />
+                    <div
+                      style={{ display: 'none' }}
+                      className={`w-full h-full items-center justify-center font-bold text-xs rounded-lg ${color.bg} ${color.text}`}
+                    >
+                      {initial}
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${color.bg} ${color.text} shadow-2xs`}
+                  >
+                    {initial}
+                  </div>
+                )}
+
+                {/* Name & Count */}
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-gray-900 text-sm truncate leading-snug group-hover:text-[#0a7c47] transition-colors">
+                    {b.name}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5 leading-snug">
+                    {count} {count === 1 ? 'product' : 'products'}
+                  </p>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title={editingBrand ? 'Edit Brand' : 'Add New Brand'}
-      >
+      {/* Slide-over Right Drawer for Brand Add/Edit (Same pattern as ProductForm) */}
+      {isDrawerOpen && (
         <BrandForm
           brand={editingBrand}
-          onSuccess={() => setIsModalOpen(false)}
-          onCancel={() => setIsModalOpen(false)}
+          products={products}
+          onSuccess={() => setIsDrawerOpen(false)}
+          onCancel={() => setIsDrawerOpen(false)}
+          onDelete={performDelete}
         />
-      </Modal>
-
-      <ConfirmModal
-        isOpen={!!deletingId}
-        onClose={() => setDeletingId(null)}
-        onConfirm={performDelete}
-        title="Delete Brand"
-        message="Are you sure you want to delete this brand? Products already tagged with it will keep the reference but show no brand until reassigned."
-      />
+      )}
     </div>
   );
 }

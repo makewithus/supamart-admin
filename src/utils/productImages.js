@@ -10,6 +10,11 @@
 // dropped) — Vite's static file serving 500s on paths containing those characters.
 
 const productImages = {
+  "Full Cream Milk": "/product-images/full_cream_milk.jpg",
+  "Tomato (Local)": "/product-images/local_tomatoes.jpg",
+  "Farm Eggs": "/product-images/farm_eggs.jpg",
+  "Toor Dal (Unpolished)": "/product-images/Cheru%20Paruppu%20Moong%20Dal.webp",
+  "Onion": "/product-images/Onion.webp",
   "Local Greens (Bal Chambu)": "/product-images/Local%20Greens%20Bal%20Chambu.webp",
   "Vada Paruppu (Urad Dal)": "/product-images/Vada%20Paruppu%20Urad%20Dal.webp",
   "Dream Cream Orange / Cashewnut": "/product-images/Dream%20Cream%20Orange%20Cashewnut.webp",

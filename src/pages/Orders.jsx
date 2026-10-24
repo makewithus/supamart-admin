@@ -1,241 +1,555 @@
-import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { ShoppingCart, Search, Lock } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
+import {
+  Download, Printer, Search, ChevronDown, Check, Clock, AlertCircle, Eye
+} from 'lucide-react';
 import { db } from '../config/firebase';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
-import Card from '../components/ui/Card';
-import Badge from '../components/ui/Badge';
-import Loader from '../components/ui/Loader';
-import EmptyState from '../components/ui/EmptyState';
-import PageHeader from '../components/ui/PageHeader';
-import Modal from '../components/ui/Modal';
-import Select from '../components/ui/Select';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import OrderDetailsModal from '../components/OrderDetailsModal';
-import { onSnapshot } from 'firebase/firestore';
+import { formatDeliverySlot } from '../utils/orderUtils';
+import toast from 'react-hot-toast';
 
-// 5 statuses (PACKING / READY_FOR_DELIVERY dropped) — one shop, one rider, straightforward flow.
-const STATUS_BADGE = {
-  ORDER_PLACED:        { label: 'Placed',            v: 'warning' },
-  ORDER_ACCEPTED:      { label: 'Accepted',           v: 'info'    },
-  OUT_FOR_DELIVERY:    { label: 'Out for Delivery',   v: 'info'    },
-  PENDING_CONFIRMATION:{ label: 'Pending Confirm',    v: 'warning' },
-  DELIVERY_DISPUTED:   { label: 'Disputed',           v: 'error'   },
-  DELIVERED:           { label: 'Delivered',          v: 'success' },
-  CANCELLED:           { label: 'Cancelled',          v: 'error'   },
-};
-
-const ALL_STATUSES = Object.keys(STATUS_BADGE);
-
-const PAYMENT_BADGE = {
-  PENDING:               { label: 'Payment Pending', v: 'neutral' },
-  AWAITING_CONFIRMATION: { label: 'Awaiting Confirmation', v: 'warning' },
-  PAID:                  { label: 'Paid', v: 'success' },
-  FAILED:                { label: 'Failed', v: 'error' },
-};
-const ALL_PAYMENT_STATUSES = Object.keys(PAYMENT_BADGE);
-
-const DATE_RANGES = {
-  ALL: { label: 'All time', ms: null },
-  TODAY: { label: 'Today', ms: 24 * 60 * 60 * 1000 },
-  WEEK: { label: 'Last 7 days', ms: 7 * 24 * 60 * 60 * 1000 },
-  MONTH: { label: 'Last 30 days', ms: 30 * 24 * 60 * 60 * 1000 },
-};
-
-function timeAgo(ms) {
+function formatRelativeTime(ms) {
   if (!ms) return '—';
-  const d = Date.now() - ms;
-  if (d < 60000) return 'Just now';
-  if (d < 3600000) return `${Math.floor(d / 60000)}m ago`;
-  if (d < 86400000) return `${Math.floor(d / 3600000)}h ago`;
-  return new Date(ms).toLocaleDateString('en-IN');
+  const diff = Date.now() - ms;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'Yesterday';
+  return `${days} d ago`;
+}
+
+function maskPhone(phone) {
+  if (!phone) return '';
+  const clean = String(phone).replace(/\D/g, '');
+  if (clean.length >= 10) {
+    return `${clean.slice(0, 5)} •••${clean.slice(-2)}`;
+  }
+  return clean;
 }
 
 export default function Orders() {
   const location = useLocation();
-  const navigate = useNavigate();
-  const [orders,  setOrders]  = useState([]);
-  const [search,  setSearch]  = useState('');
-  const [filter,  setFilter]  = useState('ALL');
-  const [paymentFilter, setPaymentFilter] = useState('ALL');
-  const [dateRange, setDateRange] = useState('ALL');
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('ALL');
+  const [search, setSearch] = useState('');
+  const [dateRange, setDateRange] = useState('Last 7 days');
+  const [slotFilter, setSlotFilter] = useState('All slots');
+  const [paymentFilter, setPaymentFilter] = useState('Any payment');
+  const [partnerFilter, setPartnerFilter] = useState('Any partner');
+  const [selectedOrders, setSelectedOrders] = useState({});
+  const [selectedOrderForDrawer, setSelectedOrderForDrawer] = useState(null);
 
+  // Subscribe to live orders in real-time from Firestore
   useEffect(() => {
-    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
-    const unsub = onSnapshot(q, (snap) => {
-      setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    try {
+      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+      const unsub = onSnapshot(
+        q,
+        (snap) => {
+          const list = snap.docs.map((d) => {
+            const data = d.data();
+            const createdAt = data.createdAt || Date.now();
+            const orderNo = data.orderNo ? String(data.orderNo) : d.id.slice(-4);
+            const customerName = data.userName || data.addressSnapshot?.name || data.address?.name || 'Customer';
+            const phone = data.userPhone || data.addressSnapshot?.phone || data.address?.phone || '';
+            const area = data.addressSnapshot?.city || data.address?.city || data.addressSnapshot?.area || 'Menamkulam';
+            const phoneArea = `${maskPhone(phone)}${phone && area ? ' · ' : ''}${area}`;
+
+            // Normalize statusKey
+            let statusKey = 'NEW';
+            const rawStatus = (data.status || '').toUpperCase();
+            if (rawStatus === 'ORDER_PLACED' || rawStatus === 'NEW' || rawStatus === 'PLACED') {
+              statusKey = 'NEW';
+            } else if (rawStatus === 'ORDER_ACCEPTED' || rawStatus === 'PACKING' || rawStatus === 'ACCEPTED') {
+              statusKey = 'PACKING';
+            } else if (rawStatus === 'OUT_FOR_DELIVERY') {
+              statusKey = 'OUT_FOR_DELIVERY';
+            } else if (rawStatus === 'DELIVERED') {
+              statusKey = 'DELIVERED';
+            } else if (rawStatus === 'CANCELLED') {
+              statusKey = 'CANCELLED';
+            } else if (rawStatus === 'DISPUTED') {
+              statusKey = 'DISPUTED';
+            }
+
+            // Payment classification
+            let paymentType = 'paid';
+            let paymentText = 'Paid · UPI';
+            if (data.paymentStatus === 'AWAITING_CONFIRMATION' || data.paymentStatus === 'PENDING') {
+              paymentType = 'verify';
+              paymentText = 'Verify UTR';
+            } else if (data.paymentMethod === 'COD' || data.paymentMethod === 'CASH_ON_DELIVERY') {
+              paymentType = 'cod';
+              paymentText = 'Cash on delivery';
+            } else if (data.paymentStatus === 'PAID') {
+              paymentType = 'paid';
+              paymentText = 'Paid · UPI';
+            } else if (data.paymentStatus === 'FAILED') {
+              paymentType = 'failed';
+              paymentText = 'Payment failed';
+            }
+
+            const slot = formatDeliverySlot(data.deliverySlot || data.slot);
+            const partner = data.deliveryBoyName || data.deliveryPartner?.name || (statusKey === 'PACKING' ? 'Not assigned' : '—');
+            const itemsCount = (data.items || []).length;
+            const total = Math.round(Number(data.total || data.totalAmount) || 0);
+
+            return {
+              id: d.id,
+              orderNo,
+              customer: customerName,
+              phoneArea,
+              itemsCount,
+              total,
+              paymentText,
+              paymentType,
+              slot,
+              status: statusKey === 'NEW' ? 'New' : statusKey === 'PACKING' ? 'Packing' : statusKey === 'OUT_FOR_DELIVERY' ? 'Out for delivery' : statusKey === 'DELIVERED' ? 'Delivered' : statusKey === 'CANCELLED' ? 'Cancelled' : 'Disputed',
+              statusKey,
+              partner,
+              placed: formatRelativeTime(createdAt),
+              createdAt,
+              urgent: statusKey === 'NEW',
+              raw: { id: d.id, ...data },
+            };
+          });
+
+          setOrders(list);
+          setLoading(false);
+        },
+        (err) => {
+          console.error('Error listening to orders:', err);
+          setLoading(false);
+        }
+      );
+
+      return () => unsub();
+    } catch (e) {
+      console.error(e);
       setLoading(false);
-    }, (err) => {
-      console.error(err);
-      setLoading(false);
-    });
-    return () => unsub();
+    }
   }, []);
 
-  // "View Order" from the NewOrderBanner (App.jsx) navigates here with the order id in
-  // router state; once that order is present in the live list, open it automatically and
-  // clear the state so a manual refresh/back-navigation doesn't reopen it.
+  // If navigated with openOrderId in state, open it immediately
   useEffect(() => {
-    const openOrderId = location.state?.openOrderId;
-    if (!openOrderId) return;
-    const match = orders.find((o) => o.id === openOrderId);
-    if (match) {
-      setSelectedOrder(match);
-      setIsModalOpen(true);
-      navigate(location.pathname, { replace: true, state: {} });
-    }
-  }, [orders, location.state, location.pathname, navigate]);
-
-  // Keep selectedOrder in sync with live updates from the database
-  useEffect(() => {
-    if (selectedOrder) {
-      const match = orders.find((o) => o.id === selectedOrder.id);
-      if (match && JSON.stringify(match) !== JSON.stringify(selectedOrder)) {
-        setSelectedOrder(match);
+    const openId = location.state?.openOrderId;
+    if (openId && orders.length > 0) {
+      const cleanId = String(openId).replace('#', '');
+      const match = orders.find((o) => o.id === cleanId || o.orderNo === cleanId);
+      if (match) {
+        setSelectedOrderForDrawer(match.raw);
       }
     }
+  }, [location.state, orders]);
+
+  // Tab counts dynamically calculated from live orders
+  const tabCounts = useMemo(() => {
+    const counts = { ALL: orders.length, NEW: 0, PACKING: 0, OUT_FOR_DELIVERY: 0, DELIVERED: 0, CANCELLED: 0, DISPUTED: 0 };
+    orders.forEach((o) => {
+      if (counts[o.statusKey] !== undefined) {
+        counts[o.statusKey]++;
+      }
+    });
+    return counts;
   }, [orders]);
 
-  const handleOrderClick = (order) => {
-    setSelectedOrder(order);
-    setIsModalOpen(true);
+  const STATUS_TABS = useMemo(() => [
+    { id: 'ALL', label: 'All', count: tabCounts.ALL },
+    { id: 'NEW', label: 'New', count: tabCounts.NEW, badgeColor: 'bg-[#dc2626] text-white' },
+    { id: 'PACKING', label: 'Packing', count: tabCounts.PACKING },
+    { id: 'OUT_FOR_DELIVERY', label: 'Out for delivery', count: tabCounts.OUT_FOR_DELIVERY },
+    { id: 'DELIVERED', label: 'Delivered', count: tabCounts.DELIVERED },
+    { id: 'CANCELLED', label: 'Cancelled', count: tabCounts.CANCELLED },
+    { id: 'DISPUTED', label: 'Disputed', count: tabCounts.DISPUTED },
+  ], [tabCounts]);
+
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      const all = {};
+      orders.forEach((o) => { all[o.id] = true; });
+      setSelectedOrders(all);
+    } else {
+      setSelectedOrders({});
+    }
   };
 
-  const filtered = orders.filter((o) => {
-    if (filter !== 'ALL' && o.status !== filter) return false;
-    if (paymentFilter !== 'ALL' && o.paymentStatus !== paymentFilter) return false;
-    const rangeMs = DATE_RANGES[dateRange].ms;
-    if (rangeMs && Date.now() - (o.createdAt || 0) > rangeMs) return false;
-    if (search &&
-        !String(o.orderNo || '').includes(search) &&
-        !o.id.toLowerCase().includes(search.toLowerCase()) &&
-        !(o.userName || '').toLowerCase().includes(search.toLowerCase()) &&
-        !(o.userPhone || '').includes(search)) return false;
-    return true;
-  });
-
-  const clearFilters = () => {
-    setSearch(''); setFilter('ALL'); setPaymentFilter('ALL'); setDateRange('ALL');
+  const handleToggleRow = (id, e) => {
+    e.stopPropagation();
+    setSelectedOrders((prev) => ({ ...prev, [id]: !prev[id] }));
   };
-  const hasActiveFilters = filter !== 'ALL' || paymentFilter !== 'ALL' || dateRange !== 'ALL' || search !== '';
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter((o) => {
+      if (activeTab !== 'ALL' && o.statusKey !== activeTab) return false;
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        const matchNo = o.orderNo.toLowerCase().includes(q);
+        const matchCust = o.customer.toLowerCase().includes(q);
+        const matchArea = o.phoneArea.toLowerCase().includes(q);
+        if (!matchNo && !matchCust && !matchArea) return false;
+      }
+      if (slotFilter !== 'All slots' && !formatDeliverySlot(o.slot).toLowerCase().includes(slotFilter.toLowerCase())) return false;
+      if (paymentFilter === 'Verify UTR' && o.paymentType !== 'verify') return false;
+      if (paymentFilter === 'Paid · UPI' && o.paymentType !== 'paid') return false;
+      if (paymentFilter === 'Cash on delivery' && o.paymentType !== 'cod') return false;
+      if (partnerFilter !== 'Any partner' && o.partner !== partnerFilter) return false;
+      return true;
+    });
+  }, [orders, activeTab, search, slotFilter, paymentFilter, partnerFilter]);
+
+  // Aggregate total for last 7 days from live orders
+  const totalRevenue7d = useMemo(() => {
+    const cutoff = Date.now() - 7 * 86400000;
+    return orders
+      .filter((o) => (o.createdAt || 0) >= cutoff && o.statusKey !== 'CANCELLED')
+      .reduce((sum, o) => sum + (o.total || 0), 0);
+  }, [orders]);
+
+  const newOrdersWaiting = useMemo(() => {
+    return orders.filter((o) => o.statusKey === 'NEW');
+  }, [orders]);
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 bg-neutral-50 min-h-screen">
-      <PageHeader title="Orders" subtitle={`${orders.length} total orders`} />
+    <div className="p-6 lg:p-8 space-y-6 w-full animate-fade-in">
+      {/* ── Page Header ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-gray-900 tracking-tight">
+            Orders
+          </h1>
+          <p className="text-xs font-semibold text-gray-400 mt-1">
+            {orders.length} orders · ₹{totalRevenue7d.toLocaleString('en-IN')} in the last 7 days
+          </p>
+        </div>
 
-      <Card>
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 mb-4">
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => {
+              if (orders.length === 0) return toast.error('No orders to export');
+              const headers = ['Order #', 'Customer', 'Items', 'Total', 'Payment', 'Slot', 'Status', 'Partner', 'Placed'];
+              const rows = filteredOrders.map((o) => [
+                o.orderNo,
+                `"${o.customer}"`,
+                o.itemsCount,
+                o.total,
+                o.paymentText,
+                formatDeliverySlot(o.slot),
+                o.status,
+                o.partner,
+                o.placed,
+              ]);
+              const csvContent = 'data:text/csv;charset=utf-8,' + [headers, ...rows].map((e) => e.join(',')).join('\n');
+              const encodedUri = encodeURI(csvContent);
+              const link = document.createElement('a');
+              link.setAttribute('href', encodedUri);
+              link.setAttribute('download', 'MS_Traders_Orders.csv');
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              toast.success('Orders CSV exported');
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-200/90 rounded-xl text-xs font-bold text-gray-800 hover:bg-gray-50 shadow-2xs transition-colors"
+          >
+            <Download size={14} strokeWidth={2.2} />
+            <span>Export CSV</span>
+          </button>
+
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-200/90 rounded-xl text-xs font-bold text-gray-800 hover:bg-gray-50 shadow-2xs transition-colors"
+          >
+            <Printer size={14} strokeWidth={2.2} />
+            <span>Print packing slips</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Urgent Attention Banner (Dynamic from live state) ── */}
+      {newOrdersWaiting.length > 0 && (
+        <div className="p-4 bg-rose-50/70 border border-rose-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#dc2626] animate-pulse shrink-0" />
+            <p className="text-xs font-semibold text-rose-950">
+              <span className="font-bold">{newOrdersWaiting.length} new {newOrdersWaiting.length === 1 ? 'order is' : 'orders are'} waiting to be accepted.</span> Oldest placed {newOrdersWaiting[newOrdersWaiting.length - 1]?.placed}.
+            </p>
+          </div>
+
+          <button
+            onClick={() => setActiveTab('NEW')}
+            className="px-3.5 py-1.5 bg-white border border-rose-200 rounded-xl text-xs font-bold text-rose-950 hover:bg-rose-50/80 shadow-2xs transition-colors shrink-0 self-start sm:self-auto cursor-pointer"
+          >
+            Review new orders
+          </button>
+        </div>
+      )}
+
+      {/* ── Orders Table Card Container ── */}
+      <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs overflow-hidden">
+        {/* Status Filter Tabs */}
+        <div className="px-5 pt-4 border-b border-gray-100 flex items-center gap-6 overflow-x-auto select-none">
+          {STATUS_TABS.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`pb-3.5 flex items-center gap-2 text-xs font-bold border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+                  isActive
+                    ? 'border-gray-900 text-gray-900'
+                    : 'border-transparent text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span
+                  className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-full ${
+                    tab.badgeColor
+                      ? tab.badgeColor
+                      : isActive
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'bg-gray-100 text-gray-500'
+                  }`}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Search & Filter Toolbar */}
+        <div className="p-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={15} />
             <input
               type="text"
-              placeholder="Search order #, name or phone…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 pr-4 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm text-primary-900
-                placeholder:text-neutral-400 focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10 transition-all w-64"
+              placeholder="Search by order #, customer name or phone..."
+              className="w-full pl-9 pr-3.5 py-2 text-xs bg-gray-50 border border-gray-200/80 rounded-xl focus:outline-none focus:border-emerald-600 focus:bg-white transition-all placeholder:text-gray-400 font-medium"
             />
           </div>
-          <Select
-            value={dateRange}
-            onChange={setDateRange}
-            className="w-40"
-            options={Object.entries(DATE_RANGES).map(([k, v]) => ({ value: k, label: v.label }))}
-          />
-          <Select
-            value={paymentFilter}
-            onChange={setPaymentFilter}
-            className="w-52"
-            placeholder="Any payment status"
-            options={[
-              { value: 'ALL', label: 'Any payment status' },
-              ...ALL_PAYMENT_STATUSES.map((s) => ({ value: s, label: PAYMENT_BADGE[s].label })),
-            ]}
-          />
-          {hasActiveFilters && (
-            <button onClick={clearFilters} className="text-xs font-semibold text-neutral-400 hover:text-primary-900 underline">
-              Clear filters
-            </button>
-          )}
-          <Badge variant="neutral">{filtered.length} of {orders.length}</Badge>
-        </div>
-        <div className="flex items-center gap-1.5 flex-wrap mb-6">
-          {['ALL', ...ALL_STATUSES].map((s) => (
-            <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                filter === s
-                  ? 'bg-primary-900 text-white'
-                  : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
-              }`}
-            >
-              {s === 'ALL' ? 'All' : STATUS_BADGE[s]?.label}
-            </button>
-          ))}
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Slot Filter */}
+            <div className="relative">
+              <select
+                value={slotFilter}
+                onChange={(e) => setSlotFilter(e.target.value)}
+                className="appearance-none bg-white border border-gray-200/80 rounded-xl pl-3 pr-7 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none cursor-pointer shadow-2xs"
+              >
+                <option>All slots</option>
+                <option>9–11 AM</option>
+                <option>11 AM–1 PM</option>
+                <option>4–6 PM</option>
+                <option>6–8 PM</option>
+              </select>
+              <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            </div>
+
+            {/* Payment Filter */}
+            <div className="relative">
+              <select
+                value={paymentFilter}
+                onChange={(e) => setPaymentFilter(e.target.value)}
+                className="appearance-none bg-white border border-gray-200/80 rounded-xl pl-3 pr-7 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none cursor-pointer shadow-2xs"
+              >
+                <option>Any payment</option>
+                <option>Verify UTR</option>
+                <option>Paid · UPI</option>
+                <option>Cash on delivery</option>
+              </select>
+              <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            </div>
+
+            {/* Partner Filter */}
+            <div className="relative">
+              <select
+                value={partnerFilter}
+                onChange={(e) => setPartnerFilter(e.target.value)}
+                className="appearance-none bg-white border border-gray-200/80 rounded-xl pl-3 pr-7 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none cursor-pointer shadow-2xs"
+              >
+                <option>Any partner</option>
+                <option>Ravi Kumar</option>
+                <option>Suresh Yadav</option>
+                <option>Not assigned</option>
+              </select>
+              <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            </div>
+          </div>
         </div>
 
-        {loading ? <Loader text="Loading orders…" /> : filtered.length === 0 ? (
-          <EmptyState icon={ShoppingCart} title="No orders found" message="Try adjusting your filters." />
-        ) : (
-          <div className="overflow-x-auto -mx-6 -mb-6">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-neutral-100">
-                  {['Order ID', 'Customer', 'Items', 'Total', 'Status', 'Time'].map((h) => (
-                    <th key={h} className="px-6 py-3.5 text-left text-[11px] font-semibold uppercase tracking-widest text-neutral-400">{h}</th>
-                  ))}
+        {/* ── Table Container ── */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-gray-100 bg-[#FAFAFA] text-[11px] font-bold text-gray-400 tracking-wider uppercase select-none">
+                <th className="py-3 px-4 w-10">
+                  <input
+                    type="checkbox"
+                    onChange={handleSelectAll}
+                    checked={filteredOrders.length > 0 && Object.keys(selectedOrders).length === filteredOrders.length}
+                    className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
+                  />
+                </th>
+                <th className="py-3 px-3">ORDER</th>
+                <th className="py-3 px-3">CUSTOMER</th>
+                <th className="py-3 px-3">ITEMS</th>
+                <th className="py-3 px-3">TOTAL</th>
+                <th className="py-3 px-3">PAYMENT</th>
+                <th className="py-3 px-3">SLOT</th>
+                <th className="py-3 px-3">STATUS</th>
+                <th className="py-3 px-3">PARTNER</th>
+                <th className="py-3 px-4">PLACED</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-gray-100 text-xs">
+              {loading ? (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-gray-400 font-semibold">
+                    Loading live orders from database…
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {filtered.map((o) => {
-                  const s = STATUS_BADGE[o.status] || { label: o.status || '—', v: 'neutral' };
+              ) : filteredOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-gray-400 font-semibold">
+                    No orders matching this filter.
+                  </td>
+                </tr>
+              ) : (
+                filteredOrders.map((o) => {
+                  const isChecked = !!selectedOrders[o.id];
                   return (
-                    <tr 
-                      key={o.id} 
-                      onClick={() => handleOrderClick(o)}
-                      className="border-b border-neutral-50 hover:bg-neutral-50/80 transition-colors cursor-pointer"
+                    <tr
+                      key={o.id}
+                      onClick={() => setSelectedOrderForDrawer(o.raw)}
+                      className={`hover:bg-gray-50/70 transition-colors cursor-pointer ${
+                        isChecked ? 'bg-emerald-50/30' : ''
+                      }`}
                     >
-                      <td className="px-6 py-4 font-mono text-xs text-neutral-500">#{o.orderNo}</td>
-                      <td className="px-6 py-4">
-                        <p className="font-medium text-primary-900">{o.userName || o.userId?.slice(0, 10) || '—'}</p>
-                        {o.userPhone && <p className="text-xs text-neutral-400">{o.userPhone}</p>}
+                      <td className="py-3 px-4" onClick={(e) => handleToggleRow(o.id, e)}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {}}
+                          className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 cursor-pointer"
+                        />
                       </td>
-                      <td className="px-6 py-4 text-neutral-500">{(o.items || o.cartItems || []).length} items</td>
-                      <td className="px-6 py-4 font-semibold text-primary-900">₹{Math.round(o.total || 0)}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-1.5">
-                          <Badge variant={s.v}>{s.label}</Badge>
-                          {['DELIVERED', 'CANCELLED'].includes(o.status) && (
-                            <Lock size={12} className="text-neutral-400" title="Closed • View Only" />
-                          )}
+
+                      <td className="py-3 px-3 font-mono font-bold text-gray-900">
+                        #{o.orderNo}
+                      </td>
+
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-gray-900">{o.customer}</div>
+                        <div className="text-[11px] text-gray-400 font-medium truncate max-w-[160px]">
+                          {o.phoneArea}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-neutral-400 text-xs">{timeAgo(o.createdAt)}</td>
+
+                      <td className="py-3 px-3 font-semibold text-gray-600">
+                        {o.itemsCount} {o.itemsCount === 1 ? 'item' : 'items'}
+                      </td>
+
+                      <td className="py-3 px-3 font-bold text-gray-900">
+                        ₹{o.total}
+                      </td>
+
+                      <td className="py-3 px-3">
+                        {o.paymentType === 'verify' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
+                            Verify UTR
+                          </span>
+                        )}
+                        {o.paymentType === 'paid' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                            Paid · UPI
+                          </span>
+                        )}
+                        {o.paymentType === 'cod' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-gray-100 text-gray-700 border border-gray-200/60">
+                            Cash on delivery
+                          </span>
+                        )}
+                        {o.paymentType === 'failed' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200/60">
+                            Failed
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-3 font-semibold text-gray-600">
+                        {formatDeliverySlot(o.slot)}
+                      </td>
+
+                      <td className="py-3 px-3">
+                        {o.statusKey === 'NEW' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-600">
+                            New
+                          </span>
+                        )}
+                        {o.statusKey === 'PACKING' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700">
+                            Packing
+                          </span>
+                        )}
+                        {o.statusKey === 'OUT_FOR_DELIVERY' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-cyan-50 text-cyan-700">
+                            Out for delivery
+                          </span>
+                        )}
+                        {o.statusKey === 'DELIVERED' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700">
+                            Delivered
+                          </span>
+                        )}
+                        {o.statusKey === 'CANCELLED' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-gray-100 text-gray-600">
+                            Cancelled
+                          </span>
+                        )}
+                        {o.statusKey === 'DISPUTED' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700">
+                            Disputed
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-3">
+                        {o.partner === 'Not assigned' ? (
+                          <span className="font-bold text-[#dc2626]">Not assigned</span>
+                        ) : o.partner === '—' ? (
+                          <span className="text-gray-400">—</span>
+                        ) : (
+                          <span className="font-bold text-gray-900">{o.partner}</span>
+                        )}
+                      </td>
+
+                      <td className="py-3 px-4 text-gray-400 font-semibold whitespace-nowrap">
+                        {o.placed}
+                      </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-      <Modal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        title={['DELIVERED', 'CANCELLED'].includes(selectedOrder?.status) ? "Order Details (Closed • View Only)" : "Order Details"}
-        size="lg"
-      >
-        <OrderDetailsModal 
-          order={selectedOrder} 
-          onClose={() => setIsModalOpen(false)}
-          onSuccess={() => setIsModalOpen(false)}
+      {/* ── Order Details Slide-over Drawer (Live sync) ── */}
+      {selectedOrderForDrawer && (
+        <OrderDetailsModal
+          order={selectedOrderForDrawer}
+          onClose={() => setSelectedOrderForDrawer(null)}
+          onSuccess={() => {}}
         />
-      </Modal>
+      )}
     </div>
   );
 }

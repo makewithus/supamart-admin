@@ -40,7 +40,9 @@ export default function useNewOrderAlert(enabled, onNewOrder) {
           const order = { id: change.doc.id, ...change.doc.data() };
           if ((order.createdAt || 0) < mountedAtRef.current) return;
 
-          playNotificationSound();
+          if (localStorage.getItem('ms_alert_sound_enabled') !== 'false') {
+            playNotificationSound();
+          }
           latestNewOrder = order;
 
           // Also fires a native OS/browser notification when permission has been granted —
