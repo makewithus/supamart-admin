@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   X, Printer, Phone, MessageSquare, Check,
-  CheckCircle2, XCircle, AlertCircle, Clock
+  CheckCircle2, XCircle, AlertCircle, Clock, Send
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { apiPatch } from '../services/api';
@@ -17,21 +17,43 @@ const STEPS = [
   { id: 'DELIVERED', label: 'Delivered' }
 ];
 
+const DELAY_ETA_PRESETS = ['+15 mins', '+20 mins', '+30 mins', '+45 mins', '+60 mins'];
+const DELAY_REASON_PRESETS = [
+  'Heavy Traffic Congestion',
+  'Adverse Weather / Rain',
+  'Store Packing Rush',
+  'Delivery Vehicle Breakdown',
+];
+
 export default function OrderDetailsModal({ order, partners: initialPartners = [], onClose, onSuccess }) {
   if (!order) return null;
 
   const [liveOrder, setLiveOrder] = useState(order);
+  const activeOrderData = liveOrder || order;
   const [partners, setPartners] = useState(initialPartners);
   const [loading, setLoading] = useState(false);
   const [assigningPartner, setAssigningPartner] = useState(false);
-  const [internalNote, setInternalNote] = useState(order.adminNote || '');
+  const [internalNote, setInternalNote] = useState(activeOrderData.adminNote || '');
+  const [delayOpen, setDelayOpen] = useState(false);
+  const [delayMins, setDelayMins] = useState('+20 mins');
+  const [delayReasonText, setDelayReasonText] = useState(activeOrderData.delayReason || '');
+  const [submittingDelay, setSubmittingDelay] = useState(false);
   const [itemsChecked, setItemsChecked] = useState(() => {
     const initial = {};
-    (order.items || []).forEach((it, idx) => {
+    (activeOrderData.items || []).forEach((it, idx) => {
       initial[it.id || it.productId || idx] = true;
     });
     return initial;
   });
+
+  useEffect(() => {
+    if (activeOrderData?.delayReason) {
+      setDelayReasonText(activeOrderData.delayReason);
+    }
+    if (activeOrderData?.deliveryDelay?.newEstimatedTime) {
+      setDelayMins(activeOrderData.deliveryDelay.newEstimatedTime);
+    }
+  }, [activeOrderData?.delayReason, activeOrderData?.deliveryDelay?.newEstimatedTime]);
 
   // Subscribe to live order updates in real-time
   useEffect(() => {
@@ -60,7 +82,6 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
     } catch (_) {}
   }, [initialPartners]);
 
-  const activeOrderData = liveOrder || order;
   const orderNo = activeOrderData.displayId || (activeOrderData.orderNo ? `#${activeOrderData.orderNo}` : `#${activeOrderData.id?.slice(-4) || ''}`);
   const customerName = (typeof activeOrderData.userName === 'string' ? activeOrderData.userName : null)
     || (typeof activeOrderData.customer === 'string' ? activeOrderData.customer : null)
@@ -197,6 +218,36 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
     }
   };
 
+  const isOrderTerminal = activeOrderData.status === 'DELIVERED' || activeOrderData.status === 'CANCELLED';
+
+  const handleSaveDelay = async () => {
+    const finalReason = delayReasonText.trim();
+    if (!finalReason) {
+      toast.error('Please specify the reason for the delivery delay.');
+      return;
+    }
+    if (!delayMins.trim()) {
+      toast.error('Please specify the updated delivery time.');
+      return;
+    }
+    setSubmittingDelay(true);
+    try {
+      if (order.id && !order.id.startsWith('#')) {
+        await apiPatch(`/orders/${order.id}/delivery-delay`, {
+          newEstimatedTime: delayMins.trim(),
+          delayReason: finalReason,
+        });
+      }
+      toast.success('Delivery delay updated & notification email sent to customer!');
+      setDelayOpen(false);
+      onSuccess?.();
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to update delivery delay');
+    } finally {
+      setSubmittingDelay(false);
+    }
+  };
+
   const handlePrint = () => {
     window.print();
   };
@@ -285,25 +336,148 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
             </div>
           </div>
 
-          {/* Delivery Delay Callout Banner if reported */}
-          {(activeOrderData.delayReason || activeOrderData.deliveryDelay) && (
-            <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 shadow-2xs">
-              <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-black text-amber-950">
-                    ⚠️ Delivery Delayed by Partner
+          {/* Delivery Delay Management Section */}
+          <div className="space-y-2">
+            {(activeOrderData.delayReason || activeOrderData.deliveryDelay) && (
+              <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 shadow-2xs">
+                <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-black text-amber-950">
+                      ⚠️ Delivery Delayed by {activeOrderData.deliveryDelay?.reportedBy || (activeOrderData.delayReportedByAdmin ? 'Store Admin' : 'Delivery Partner')}
+                    </p>
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 bg-amber-200 text-amber-900 rounded-md shrink-0">
+                      New ETA: {activeOrderData.deliveryDelay?.newEstimatedTime || 'Delayed'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-800 mt-1 font-medium">
+                    <span className="font-bold">Reason:</span> {activeOrderData.delayReason || activeOrderData.deliveryDelay?.delayReason || activeOrderData.deliveryDelay?.reason || 'Traffic/Weather delay'}
                   </p>
-                  <span className="text-[10px] font-extrabold px-2 py-0.5 bg-amber-200 text-amber-900 rounded-md">
-                    New ETA: {activeOrderData.deliveryDelay?.newEstimatedTime || 'Delayed'}
-                  </span>
+                  {!isOrderTerminal && (
+                    <button
+                      type="button"
+                      onClick={() => setDelayOpen((v) => !v)}
+                      className="mt-2 text-[11px] font-bold text-amber-900 hover:text-amber-950 underline cursor-pointer flex items-center gap-1"
+                    >
+                      <Clock size={12} />
+                      <span>{delayOpen ? 'Close Delay Editor' : 'Update Delay / Notify Customer'}</span>
+                    </button>
+                  )}
                 </div>
-                <p className="text-xs text-amber-800 mt-1 font-medium">
-                  <span className="font-bold">Reason:</span> {activeOrderData.delayReason || activeOrderData.deliveryDelay?.reason || 'Traffic/Weather delay'}
-                </p>
               </div>
-            </div>
-          )}
+            )}
+
+            {!activeOrderData.delayReason && !activeOrderData.deliveryDelay && !isOrderTerminal && !delayOpen && (
+              <button
+                type="button"
+                onClick={() => setDelayOpen(true)}
+                className="w-full py-2 px-3 border border-amber-300 bg-amber-50/60 hover:bg-amber-100/60 text-amber-900 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Clock size={14} className="text-amber-600" />
+                <span>Report Delivery Delay & Email Customer</span>
+              </button>
+            )}
+
+            {/* Delay Update Drawer / Form */}
+            {delayOpen && !isOrderTerminal && (
+              <div className="p-4 bg-amber-50/90 border border-amber-300 rounded-xl space-y-3 animate-fade-in shadow-2xs">
+                <div className="flex items-center justify-between pb-1 border-b border-amber-200/60">
+                  <div className="flex items-center gap-1.5 text-xs font-black text-amber-950">
+                    <Clock size={14} className="text-amber-700" />
+                    <span>Update Delivery Estimate & Notify</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDelayOpen(false)}
+                    className="text-amber-700 hover:text-amber-950 text-xs font-bold p-1 cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+
+                {/* Delay Duration Presets */}
+                <div>
+                  <label className="block text-[11px] font-bold text-amber-950 mb-1.5">
+                    Estimated Delay / New Time:
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {DELAY_ETA_PRESETS.map((eta) => (
+                      <button
+                        key={eta}
+                        type="button"
+                        onClick={() => setDelayMins(eta)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          delayMins === eta
+                            ? 'bg-amber-700 text-white shadow-xs'
+                            : 'bg-white border border-amber-200 text-amber-900 hover:bg-amber-100/50'
+                        }`}
+                      >
+                        {eta}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    value={delayMins}
+                    onChange={(e) => setDelayMins(e.target.value)}
+                    placeholder="e.g. +20 mins or Arriving by 5:30 PM"
+                    className="w-full px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-semibold text-gray-900 focus:outline-none focus:border-amber-600 focus:ring-1 focus:ring-amber-600"
+                  />
+                </div>
+
+                {/* Reason Presets */}
+                <div>
+                  <label className="block text-[11px] font-bold text-amber-950 mb-1.5">
+                    Reason for Delay:
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {DELAY_REASON_PRESETS.map((reason) => (
+                      <button
+                        key={reason}
+                        type="button"
+                        onClick={() => setDelayReasonText(reason)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          delayReasonText === reason
+                            ? 'bg-amber-700 text-white font-bold shadow-xs'
+                            : 'bg-white border border-amber-200 text-amber-900 hover:bg-amber-100/50'
+                        }`}
+                      >
+                        {reason}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={delayReasonText}
+                    onChange={(e) => setDelayReasonText(e.target.value)}
+                    placeholder="Enter or customize the reason for the customer..."
+                    className="w-full p-2.5 bg-white border border-amber-300 rounded-lg text-xs text-gray-900 placeholder-amber-900/40 focus:outline-none focus:border-amber-600 focus:ring-1 focus:ring-amber-600 font-medium"
+                  />
+                </div>
+
+                {/* Submit & Cancel Buttons */}
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleSaveDelay}
+                    disabled={submittingDelay}
+                    className="flex-1 py-2 bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white text-xs font-bold rounded-lg shadow-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Send size={13} />
+                    <span>{submittingDelay ? 'Sending Email & Updating...' : 'Update & Email Customer'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDelayOpen(false)}
+                    disabled={submittingDelay}
+                    className="px-3 py-2 border border-amber-300 bg-white hover:bg-amber-100/50 text-amber-900 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Customer Confirmation & Rating Status Banner */}
           {(activeOrderData.confirmedAt || activeOrderData.status === 'DELIVERED') && (
@@ -460,7 +634,7 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                 <span className="font-extrabold text-[#0A7C47]">{deliveryFee > 0 ? `₹${deliveryFee}` : 'FREE'}</span>
               </div>
               <div className="flex justify-between text-sm font-extrabold text-gray-900 pt-1 border-t border-gray-100">
-                <span>To collect / paid</span>
+                <span>Order Total (Paid Online)</span>
                 <span>₹{toCollect}</span>
               </div>
             </div>

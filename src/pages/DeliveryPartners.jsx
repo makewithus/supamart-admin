@@ -69,12 +69,14 @@ export default function DeliveryPartners() {
     }
   }, []);
 
-  // Map partners with live activity, counts, and duty status
+  // Map partners with live activity, counts, and duty status strictly from DB
   const partners = useMemo(() => {
     return rawPartners.map((p) => {
       const pOrders = orders.filter((o) => o.assignedPartnerId === p.id);
       const activeOrders = pOrders.filter((o) => o.status === 'OUT_FOR_DELIVERY' || o.status === 'ORDER_ACCEPTED' || o.status === 'PENDING_CONFIRMATION');
-      const deliveredTodayCount = pOrders.filter((o) => o.status === 'DELIVERED').length;
+      const deliveredOrders = pOrders.filter((o) => o.status === 'DELIVERED');
+      const deliveredTodayCount = deliveredOrders.length;
+      const onTimeDelivered = deliveredOrders.filter((o) => !o.delayReason && !o.deliveryDelay);
 
       let online = p.isOnDuty !== false && p.isActive !== false;
       let status = 'On duty';
@@ -94,6 +96,10 @@ export default function DeliveryPartners() {
         btnAction = 'Track';
       }
 
+      const onTimePercent = deliveredTodayCount > 0
+        ? `${Math.round((onTimeDelivered.length / deliveredTodayCount) * 100)}%`
+        : '—';
+
       return {
         id: p.id,
         initial: (p.name || 'P')[0]?.toUpperCase(),
@@ -106,7 +112,7 @@ export default function DeliveryPartners() {
         subText,
         delivered: deliveredTodayCount,
         activeOrdersCount: activeOrders.length,
-        onTime: deliveredTodayCount > 0 ? '100%' : '—',
+        onTime: onTimePercent,
         btnAction,
         currentLocation: p.currentLocation || null,
         lastSyncedAt: p.lastSyncedAt || null,
@@ -139,7 +145,7 @@ export default function DeliveryPartners() {
         const syncLocation = o.lastSyncedLocation || assignedPartner?.currentLocation || null;
         const lastSyncedTime = o.lastSyncedAt || assignedPartner?.lastSyncedAt || null;
 
-        const delayReason = o.delayReason || o.deliveryDelay?.reason || null;
+        const delayReason = o.delayReason || o.deliveryDelay?.delayReason || o.deliveryDelay?.reason || null;
         const newEstimatedTime = o.deliveryDelay?.newEstimatedTime || null;
 
         const isDelivered = o.status === 'DELIVERED';
@@ -147,6 +153,8 @@ export default function DeliveryPartners() {
         const isOutForDelivery = o.status === 'OUT_FOR_DELIVERY';
         const isConfirmed = !!(o.confirmedAt || o.orderRating || o.rating);
         const rating = o.orderRating || o.rating || null;
+        const paymentMethod = o.paymentMethod || 'ONLINE';
+        const isPaid = !!(o.isPaid || o.paymentStatus === 'PAID');
 
         return {
           id: o.id,
@@ -173,6 +181,8 @@ export default function DeliveryPartners() {
           isOutForDelivery,
           isConfirmed,
           rating,
+          paymentMethod,
+          isPaid,
           raw: o,
         };
       })
@@ -440,8 +450,8 @@ export default function DeliveryPartners() {
                       <div className="text-[11px] text-gray-600 mt-1 max-w-[150px] truncate" title={d.itemsSummary}>
                         {d.itemsCount} items · {d.itemsSummary}
                       </div>
-                      <div className="mt-1 font-bold text-[#0A7C47] text-xs">
-                        Paid online · ₹{d.total}
+                      <div className={`mt-1 font-bold text-xs ${d.isPaid ? 'text-[#0A7C47]' : 'text-amber-700'}`}>
+                        {d.paymentMethod === 'COD' ? 'Cash on delivery' : d.isPaid ? 'Paid online' : 'Payment pending'} · ₹{d.total}
                       </div>
                     </td>
 
