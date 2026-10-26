@@ -30,7 +30,11 @@ async function request(method, path, body, options = {}) {
     return res.data;
   } catch (err) {
     if (err.response) {
-      throw new Error(err.response.data?.error || err.response.statusText);
+      const msg = err.response.data?.error || err.response.data?.message || err.response.statusText;
+      const customErr = new Error(msg);
+      customErr.response = err.response;
+      customErr.statusCode = err.response.status;
+      throw customErr;
     }
     throw err;
   }

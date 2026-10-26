@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../config/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { apiPatch } from '../services/api';
+import { apiGet, apiPatch } from '../services/api';
 import toast from 'react-hot-toast';
-import { Phone, CheckCircle2, XCircle, Send } from 'lucide-react';
+import { Phone, CheckCircle2, XCircle, Send, RefreshCw } from 'lucide-react';
 
 export default function Issues() {
   const [issues, setIssues] = useState([]);
@@ -12,25 +12,65 @@ export default function Issues() {
   const [replyText, setReplyText] = useState("Sorry about this. We've issued a refund to your UPI ID.");
   const [actionLoading, setActionLoading] = useState(false);
 
-  useEffect(() => {
-    const q = query(collection(db, 'issues'), orderBy('createdAt', 'desc'));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setIssues(items);
-        if (items.length > 0 && !selectedIssueId) {
-          setSelectedIssueId(items[0].id);
-        }
-        setLoading(false);
-      },
-      (err) => {
-        console.error('Issues snapshot error:', err);
-        setLoading(false);
-      }
-    );
-    return () => unsub();
+  const mergeIssues = useCallback((incomingList) => {
+    setIssues((prev) => {
+      const map = new Map();
+      prev.forEach((i) => { if (i?.id) map.set(i.id, i); });
+      incomingList.forEach((i) => { if (i?.id) map.set(i.id, { ...(map.get(i.id) || {}), ...i }); });
+      const merged = Array.from(map.values());
+      merged.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      return merged;
+    });
   }, []);
+
+  const fetchIssuesFromApi = useCallback(async () => {
+    try {
+      const res = await apiGet('/issues');
+      const items = res?.items || (Array.isArray(res) ? res : []);
+      if (items.length > 0) {
+        mergeIssues(items);
+        setSelectedIssueId((curr) => curr || items[0]?.id);
+      }
+    } catch (e) {
+      console.warn('apiGet(/issues) notice:', e?.message || e);
+    } finally {
+      setLoading(false);
+    }
+  }, [mergeIssues]);
+
+  useEffect(() => {
+    fetchIssuesFromApi();
+
+    let unsub = () => {};
+    try {
+      const q = query(collection(db, 'issues'), orderBy('createdAt', 'desc'));
+      unsub = onSnapshot(
+        q,
+        (snap) => {
+          const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          if (items.length > 0) {
+            mergeIssues(items);
+            setSelectedIssueId((curr) => curr || items[0]?.id);
+          }
+          setLoading(false);
+        },
+        (err) => {
+          console.warn('Issues snapshot error (using API fallback):', err?.message || err);
+          setLoading(false);
+        }
+      );
+    } catch (e) {
+      console.warn('Firestore subscription failed, relying on API:', e);
+      setLoading(false);
+    }
+
+    const interval = setInterval(fetchIssuesFromApi, 10000);
+
+    return () => {
+      unsub();
+      clearInterval(interval);
+    };
+  }, [fetchIssuesFromApi, mergeIssues]);
 
   function formatTimeAgo(ms) {
     if (!ms) return 'Just now';
@@ -85,10 +125,18 @@ export default function Issues() {
     });
   }, [issues]);
 
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'OPEN' | 'RESOLVED'
+
+  const filteredIssues = useMemo(() => {
+    if (statusFilter === 'OPEN') return allIssues.filter((i) => i.status === 'OPEN');
+    if (statusFilter === 'RESOLVED') return allIssues.filter((i) => i.status === 'RESOLVED' || i.status === 'REJECTED');
+    return allIssues;
+  }, [allIssues, statusFilter]);
+
   const activeIssue = useMemo(() => {
-    if (allIssues.length === 0) return null;
-    return allIssues.find((i) => i.id === selectedIssueId) || allIssues[0];
-  }, [allIssues, selectedIssueId]);
+    if (filteredIssues.length === 0) return null;
+    return filteredIssues.find((i) => i.id === selectedIssueId) || filteredIssues[0];
+  }, [filteredIssues, selectedIssueId]);
 
   const handleResolveAction = async (actionType) => {
     if (!activeIssue) return;
@@ -99,6 +147,7 @@ export default function Issues() {
         resolutionType: actionType,
         resolutionNotes: replyText,
       });
+      fetchIssuesFromApi();
       toast.success(actionType === 'REJECT' ? 'Issue claim rejected' : 'Issue marked resolved');
     } catch (err) {
       toast.error(err.message || 'Failed to update issue');
@@ -114,28 +163,69 @@ export default function Issues() {
 
   return (
     <div className="p-6 lg:p-8 w-full space-y-6">
-      {/* Title & Subtitle */}
-      <div>
-        <h1 className="text-2xl lg:text-[28px] font-extrabold text-gray-900 tracking-tight leading-none">
-          Issues
-        </h1>
-        <p className="text-xs sm:text-sm text-gray-500 font-normal mt-1.5">
-          Missing, damaged or wrong items reported by customers — reply within 2 hours
-        </p>
+      {/* Title & Filter Tabs */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl lg:text-[28px] font-extrabold text-gray-900 tracking-tight leading-none">
+            Issues
+          </h1>
+          <p className="text-xs sm:text-sm text-gray-500 font-normal mt-1.5">
+            Missing, damaged, delivery disputes or wrong items reported by customers
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('ALL')}
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+              statusFilter === 'ALL'
+                ? 'bg-white text-gray-900 shadow-2xs'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            All ({allIssues.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('OPEN')}
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+              statusFilter === 'OPEN'
+                ? 'bg-white text-[#E03137] shadow-2xs'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Open ({allIssues.filter((i) => i.status === 'OPEN').length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('RESOLVED')}
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+              statusFilter === 'RESOLVED'
+                ? 'bg-white text-emerald-700 shadow-2xs'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Resolved ({allIssues.filter((i) => i.status === 'RESOLVED' || i.status === 'REJECTED').length})
+          </button>
+        </div>
       </div>
 
       {loading ? (
         <div className="bg-white rounded-2xl p-12 border border-gray-100 text-center text-gray-400 font-medium">
           Loading support issues from database…
         </div>
-      ) : allIssues.length === 0 ? (
+      ) : filteredIssues.length === 0 ? (
         <div className="bg-white rounded-2xl p-16 border border-gray-100 text-center shadow-2xs space-y-3">
           <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
             <CheckCircle2 size={28} />
           </div>
-          <h2 className="text-lg font-bold text-gray-900">No active customer issues</h2>
+          <h2 className="text-lg font-bold text-gray-900">
+            {statusFilter === 'ALL'
+              ? 'No customer issues reported'
+              : `No ${statusFilter.toLowerCase()} issues found`}
+          </h2>
           <p className="text-xs sm:text-sm text-gray-500 max-w-sm mx-auto">
-            All customer deliveries are running smoothly! When customers report missing or damaged items, they will appear here immediately.
+            When customers report missing items, damaged goods, or dispute deliveries in the mobile app, they will appear here immediately.
           </p>
         </div>
       ) : (
@@ -143,7 +233,7 @@ export default function Issues() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left Column: List of Issues */}
           <div className="lg:col-span-5 space-y-3">
-            {allIssues.map((issue) => {
+            {filteredIssues.map((issue) => {
               const isSelected = activeIssue?.id === issue.id;
               return (
                 <div

@@ -5,11 +5,11 @@ import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import Modal from '../components/ui/Modal';
 import PaymentVerificationModal from '../components/PaymentVerificationModal';
 import OrderDetailsModal from '../components/OrderDetailsModal';
-import { apiPatch } from '../services/api';
+import { apiPatch, apiGet } from '../services/api';
 import toast from 'react-hot-toast';
 
 function formatWaiting(createdAt) {
-  if (!createdAt) return '4 min';
+  if (!createdAt) return '—';
   const diffMs = Date.now() - createdAt;
   const diffMins = Math.floor(diffMs / (1000 * 60));
   if (diffMins < 60) return `${Math.max(1, diffMins)} min`;
@@ -30,7 +30,21 @@ export default function Accounts() {
   const [customRejectReason, setCustomRejectReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
+  const fetchOrdersFromApi = async () => {
+    try {
+      const data = await apiGet('/orders?limit=100');
+      const items = Array.isArray(data) ? data : data?.items || [];
+      if (items.length > 0) {
+        setOrders(items);
+      }
+    } catch (_) {}
+    setLoading(false);
+  };
+
   useEffect(() => {
+    fetchOrdersFromApi();
+    const interval = setInterval(fetchOrdersFromApi, 10000);
+
     const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(
       q,
@@ -40,10 +54,13 @@ export default function Accounts() {
       },
       (err) => {
         console.error('Accounts snapshot error:', err);
-        setLoading(false);
+        fetchOrdersFromApi();
       }
     );
-    return () => unsub();
+    return () => {
+      clearInterval(interval);
+      unsub();
+    };
   }, []);
 
   // Filter orders by tab
@@ -432,29 +449,37 @@ export default function Accounts() {
         </div>
       )}
 
-      {/* Full Order Inspection Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title={`Payment Details #${selectedOrder?.orderNo || ''}`}
-        size="lg"
-      >
-        {selectedOrder?.paymentStatus === 'AWAITING_CONFIRMATION' && selectedOrder?.status !== 'DELIVERED' ? (
-          <PaymentVerificationModal
-            order={selectedOrder}
+      {/* Payment Verification Modal */}
+      {isModalOpen && selectedOrder && (
+        selectedOrder.paymentStatus === 'AWAITING_CONFIRMATION' && selectedOrder.status !== 'DELIVERED' ? (
+          <Modal
+            isOpen={isModalOpen}
             onClose={() => setIsModalOpen(false)}
-            onSuccess={() => setIsModalOpen(false)}
-          />
+            title={`Payment Details #${selectedOrder?.orderNo || ''}`}
+            size="lg"
+          >
+            <PaymentVerificationModal
+              order={selectedOrder}
+              onClose={() => setIsModalOpen(false)}
+              onSuccess={() => {
+                setIsModalOpen(false);
+                fetchOrdersFromApi();
+              }}
+            />
+          </Modal>
         ) : (
           <OrderDetailsModal
             order={selectedOrder}
             readOnly={true}
             viewOnlyReason="Order payment details in audit ledger."
             onClose={() => setIsModalOpen(false)}
-            onSuccess={() => setIsModalOpen(false)}
+            onSuccess={() => {
+              setIsModalOpen(false);
+              fetchOrdersFromApi();
+            }}
           />
-        )}
-      </Modal>
+        )
+      )}
     </div>
   );
 }

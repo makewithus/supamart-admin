@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X, Printer, Phone, MessageSquare, Check,
   CheckCircle2, XCircle, AlertCircle, Clock, Send
@@ -261,16 +262,16 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
     window.open(`https://wa.me/${num}?text=Hello%20${encodeURIComponent(customerName)}%2C%20regarding%20your%20order%20${orderNo}`, '_blank');
   };
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
+  return createPortal(
+    <div className="fixed inset-0 z-[100] overflow-hidden flex justify-end">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/35 backdrop-blur-[1px] transition-opacity animate-fade-in"
+        className="fixed inset-0 bg-black/40 backdrop-blur-[1px] transition-opacity animate-fade-in"
         onClick={onClose}
       />
 
       {/* Slide-over Drawer Panel */}
-      <div className="relative w-full max-w-[500px] sm:max-w-[520px] bg-white h-full shadow-2xl flex flex-col z-50 overflow-hidden animate-slide-in-right">
+      <div className="relative w-full max-w-[500px] sm:max-w-[520px] bg-white h-full shadow-2xl flex flex-col z-[100] overflow-hidden animate-slide-in-right">
         {/* Drawer Header */}
         <div className="p-5 border-b border-gray-100 flex items-start justify-between bg-white shrink-0">
           <div>
@@ -499,24 +500,33 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
           )}
 
           {/* Action Buttons: Accept / Cancel */}
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={handleAcceptOrder}
-              disabled={loading}
-              className="flex-1 py-2.5 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5"
-            >
-              <Check size={16} strokeWidth={2.4} />
-              <span>Accept order</span>
-            </button>
+          {activeOrderData.status !== 'DELIVERED' && activeOrderData.status !== 'CANCELLED' && (
+            <div className="flex items-center gap-2.5">
+              {(activeOrderData.status === 'ORDER_PLACED' || activeOrderData.status === 'PLACED' || !activeOrderData.status) ? (
+                <button
+                  onClick={handleAcceptOrder}
+                  disabled={loading}
+                  className="flex-1 py-2.5 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Check size={16} strokeWidth={2.4} />
+                  <span>Accept order</span>
+                </button>
+              ) : (
+                <div className="flex-1 py-2.5 px-3 bg-emerald-50 border border-emerald-200/80 text-emerald-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
+                  <CheckCircle2 size={16} className="text-emerald-600" strokeWidth={2.4} />
+                  <span>Order Accepted</span>
+                </div>
+              )}
 
-            <button
-              onClick={handleCancelOrder}
-              disabled={loading}
-              className="px-4 py-2.5 border border-rose-300 text-rose-600 hover:bg-rose-50 font-bold text-xs rounded-xl transition-colors"
-            >
-              Cancel order
-            </button>
-          </div>
+              <button
+                onClick={handleCancelOrder}
+                disabled={loading}
+                className="px-4 py-2.5 border border-rose-300 text-rose-600 hover:bg-rose-50 font-bold text-xs rounded-xl transition-colors"
+              >
+                Cancel order
+              </button>
+            </div>
+          )}
 
           {/* CUSTOMER Section */}
           <div className="space-y-2">
@@ -743,6 +753,7 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

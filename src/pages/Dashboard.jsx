@@ -4,16 +4,37 @@ import {
   ChevronRight, Download, Package, ShoppingBag, Clock
 } from 'lucide-react';
 import { auth, db } from '../config/firebase';
-import { collection, query, orderBy, onSnapshot, where } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc } from 'firebase/firestore';
 import { useBadges } from '../context/BadgeContext';
 import productImages from '../utils/productImages';
-import { formatDeliverySlot } from '../utils/orderUtils';
+import { apiGet } from '../services/api';
 
 function formatRupee(num = 0) {
   return new Intl.NumberFormat('en-IN').format(Math.round(num));
 }
 
-function timeAgo(ms) {
+function getOrderTime(o) {
+  if (!o?.createdAt) return Date.now();
+  if (typeof o.createdAt === 'number') return o.createdAt;
+  if (typeof o.createdAt?.toMillis === 'function') return o.createdAt.toMillis();
+  if (o.createdAt?.seconds) return o.createdAt.seconds * 1000;
+  if (typeof o.createdAt === 'string') {
+    const parsed = Date.parse(o.createdAt);
+    return isNaN(parsed) ? Date.now() : parsed;
+  }
+  return Date.now();
+}
+
+function normalizeOrder(o) {
+  return {
+    ...o,
+    createdAt: getOrderTime(o),
+    total: Number(o?.total ?? o?.totalAmount ?? o?.finalAmount ?? 0) || 0,
+  };
+}
+
+function timeAgo(val) {
+  const ms = typeof val === 'number' ? val : (val?.seconds ? val.seconds * 1000 : Date.parse(val) || 0);
   if (!ms) return 'Just now';
   const diff = Date.now() - ms;
   const mins = Math.floor(diff / 60000);
@@ -25,7 +46,7 @@ function timeAgo(ms) {
   return `${days} d ago`;
 }
 
-function MiniSparkline({ heights = [40, 60, 50, 75, 100], color = '#0A7C47' }) {
+function MiniSparkline({ heights = [20, 20, 20, 20, 20] }) {
   return (
     <div className="flex items-end gap-1 h-6 shrink-0">
       {heights.map((h, i) => {
@@ -54,22 +75,65 @@ export default function Dashboard() {
   const [orders, setOrders] = useState([]);
   const [issues, setIssues] = useState([]);
   const [partners, setPartners] = useState([]);
+  const [storeConfig, setStoreConfig] = useState(null);
+  const [adminUser, setAdminUser] = useState(() => auth.currentUser);
   const [loading, setLoading] = useState(true);
 
-  // Subscribe to real-time orders
+  // Subscribe to auth state changes to keep admin user reactive
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((user) => {
+      setAdminUser(user);
+    });
+    return () => unsub();
+  }, []);
+
+  // Subscribe to real-time store configuration
   useEffect(() => {
     try {
-      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
-      const unsub = onSnapshot(q, (snap) => {
-        setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-        setLoading(false);
-      }, (err) => {
-        console.error('Real-time orders error:', err);
-        setLoading(false);
+      const unsub = onSnapshot(doc(db, 'config', 'global'), (snap) => {
+        if (snap.exists()) {
+          setStoreConfig(snap.data());
+        }
       });
       return () => unsub();
+    } catch (_) {}
+  }, []);
+
+  const fetchOrdersFromApi = async () => {
+    try {
+      const data = await apiGet('/orders?limit=100');
+      const items = Array.isArray(data) ? data : data?.items || [];
+      if (items.length > 0) {
+        setOrders(items.map(normalizeOrder));
+      }
+    } catch (_) {}
+    setLoading(false);
+  };
+
+  // Subscribe to real-time orders with robust API fallback
+  useEffect(() => {
+    fetchOrdersFromApi();
+    const interval = setInterval(fetchOrdersFromApi, 10000);
+
+    try {
+      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+      const unsub = onSnapshot(
+        q,
+        (snap) => {
+          setOrders(snap.docs.map((d) => normalizeOrder({ id: d.id, ...d.data() })));
+          setLoading(false);
+        },
+        (err) => {
+          console.error('Real-time orders error:', err);
+          fetchOrdersFromApi();
+        }
+      );
+      return () => {
+        clearInterval(interval);
+        unsub();
+      };
     } catch (_) {
-      setLoading(false);
+      fetchOrdersFromApi();
     }
   }, []);
 
@@ -94,29 +158,39 @@ export default function Dashboard() {
   }, []);
 
   // Admin user name & dynamic greeting
-  const adminName = auth.currentUser?.displayName?.split(' ')[0] || 'Sudarsanan';
+  const adminName =
+    adminUser?.displayName?.trim()?.split(' ')[0] ||
+    (adminUser?.email ? adminUser.email.split('@')[0] : 'Admin');
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
-  // Dynamic Date string
+  // Dynamic Date and Store hours string
   const todayFormatted = new Intl.DateTimeFormat('en-IN', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
   }).format(new Date());
-  const todayStr = `${todayFormatted} · Store open since 8:30 AM`;
 
-  // Start of today timestamp
+  const isSunday = new Date().getDay() === 0;
+  const storeOpenTime = isSunday
+    ? (storeConfig?.openingHours?.sunOpen || '9:00 AM')
+    : (storeConfig?.openingHours?.monSatOpen || '8:30 AM');
+  const storeIsOpen = localStorage.getItem('ms_admin_store_open') !== 'false';
+  const todayStr = storeIsOpen
+    ? `${todayFormatted} · Store open since ${storeOpenTime}`
+    : `${todayFormatted} · Store closed`;
+
+  // Timestamps
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const startOf7DaysAgo = startOfToday - (6 * 24 * 60 * 60 * 1000);
-  const startOf14DaysAgo = startOfToday - (13 * 24 * 60 * 60 * 1000);
+  const startOf30DaysAgo = startOfToday - (29 * 24 * 60 * 60 * 1000);
 
-  // 1. Alert / Action Card metrics (Real-time)
+  // 1. Alert / Action Card metrics (100% Real-time, NO mock fallbacks)
   const actionMetrics = useMemo(() => {
     // New orders awaiting action
     const newOrders = orders.filter((o) =>
-      o.status === 'ORDER_PLACED' || o.status === 'PENDING_CONFIRMATION' || !o.status
+      o.status === 'ORDER_PLACED' || o.status === 'PENDING_CONFIRMATION' || !o.status || o.status === 'PLACED'
     );
     let oldestMinutes = 0;
     if (newOrders.length > 0) {
@@ -126,82 +200,161 @@ export default function Dashboard() {
 
     // Payments to verify (Manual UPI pending)
     const unverified = orders.filter((o) =>
-      o.paymentMethod === 'UPI_MANUAL' &&
-      (o.paymentStatus === 'PENDING' || o.paymentStatus === 'AWAITING_CONFIRMATION')
+      (o.paymentMethod === 'UPI_MANUAL' || o.paymentMethod === 'UPI') &&
+      (o.paymentStatus === 'PENDING' || o.paymentStatus === 'AWAITING_CONFIRMATION' || o.paymentStatus === 'AWAITING_VERIFICATION')
     );
-    const unverifiedAmount = unverified.reduce((sum, o) => sum + (o.total || 0), 0);
+    const unverifiedAmount = unverified.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
 
     // Open issues
-    const openIssues = issues.filter((i) => i.status === 'OPEN' || !i.resolved);
+    const openIssues = issues.filter((i) => i.status === 'OPEN' || (!i.status && !i.resolved));
     const overdueIssues = openIssues.filter((i) => (Date.now() - (i.createdAt || 0)) > 2 * 3600 * 1000);
 
-    // Low on stock items (from shared BadgeContext single listener)
+    // Low on stock items
     const lowStockCount = dashboardLowStock?.count || 0;
-    const lowNames = dashboardLowStock?.names || 'Eggs, milk, toor dal';
+    const lowNames = dashboardLowStock?.names || '';
 
     return {
-      newOrdersCount: newOrders.length || 4,
-      oldestMinutes: oldestMinutes || 18,
-      unverifiedCount: unverified.length || 13,
-      unverifiedAmount: unverifiedAmount || 4862,
-      openIssuesCount: openIssues.length || 2,
-      overdueIssuesCount: overdueIssues.length || 1,
-      lowStockCount: lowStockCount || 3,
+      newOrdersCount: newOrders.length,
+      oldestMinutes,
+      unverifiedCount: unverified.length,
+      unverifiedAmount,
+      openIssuesCount: openIssues.length,
+      overdueIssuesCount: overdueIssues.length,
+      lowStockCount,
       lowStockNames: lowNames,
     };
   }, [orders, issues, dashboardLowStock]);
 
-  // 2. Metric KPI Cards (Today vs Range)
-  const kpiData = useMemo(() => {
-    const todayOrders = orders.filter((o) => (o.createdAt || 0) >= startOfToday);
-    const revenueToday = todayOrders.reduce((sum, o) => sum + (o.total || 0), 0);
-    const todayCount = todayOrders.length;
-    const avgOrder = todayCount > 0 ? Math.round(revenueToday / todayCount) : 0;
+  // 2. Metric KPI Cards (Real-time computed based on selected timeRange)
+  const rangeConfig = useMemo(() => {
+    if (timeRange === '7 days') {
+      return {
+        start: startOf7DaysAgo,
+        label: 'last 7 days',
+        revenueSubtitle: "last 7 days' gross",
+        ordersSubtitle: 'in last 7 days',
+      };
+    }
+    if (timeRange === '30 days') {
+      return {
+        start: startOf30DaysAgo,
+        label: 'last 30 days',
+        revenueSubtitle: "last 30 days' gross",
+        ordersSubtitle: 'in last 30 days',
+      };
+    }
+    return {
+      start: startOfToday,
+      label: 'today',
+      revenueSubtitle: "today's gross",
+      ordersSubtitle: 'today',
+    };
+  }, [timeRange, startOfToday, startOf7DaysAgo, startOf30DaysAgo]);
 
-    const deliveredToday = todayOrders.filter((o) => o.status === 'DELIVERED').length;
-    const onTimeRate = todayCount > 0 ? Math.round((deliveredToday / todayCount) * 100) : 100;
+  const kpiData = useMemo(() => {
+    const rangeOrders = orders.filter((o) => (o.createdAt || 0) >= rangeConfig.start);
+    const revenue = rangeOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+    const count = rangeOrders.length;
+    const avgOrder = count > 0 ? Math.round(revenue / count) : 0;
+
+    const delivered = rangeOrders.filter((o) => o.status === 'DELIVERED');
+    const onTimeDelivered = delivered.filter((o) => !o.delayReason && !o.deliveryDelay);
+    const onTimeRate = delivered.length > 0
+      ? Math.round((onTimeDelivered.length / delivered.length) * 100)
+      : (count > 0 ? 100 : 0);
 
     return {
-      revenueToday,
-      ordersToday: todayCount,
+      revenue,
+      ordersCount: count,
       avgOrder,
       onTimeRate,
     };
-  }, [orders, startOfToday]);
+  }, [orders, rangeConfig]);
 
-  // 3. Revenue Last 14 Days (Real-time chart data)
-  const revenue14DaysData = useMemo(() => {
-    const dayMap = {};
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(startOfToday - (i * 24 * 60 * 60 * 1000));
-      const dayNum = String(d.getDate());
-      dayMap[dayNum] = {
-        day: dayNum,
-        amount: 0,
-        isToday: i === 0,
-      };
-    }
-
-    orders.forEach((o) => {
-      if (o.createdAt && o.createdAt >= startOf14DaysAgo) {
-        const orderDate = new Date(o.createdAt);
-        const dayNum = String(orderDate.getDate());
-        if (dayMap[dayNum]) {
-          dayMap[dayNum].amount += (o.total || 0);
-        }
-      }
+  // 3. Dynamic Sparklines (5 daily intervals leading up to today)
+  const sparklineData = useMemo(() => {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const buckets = [4, 3, 2, 1, 0].map((daysAgo) => {
+      const bStart = startOfToday - (daysAgo * dayMs);
+      const bEnd = bStart + dayMs;
+      const bOrders = orders.filter((o) => (o.createdAt || 0) >= bStart && (o.createdAt || 0) < bEnd);
+      const bRevenue = bOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+      const bCount = bOrders.length;
+      const bAvg = bCount > 0 ? Math.round(bRevenue / bCount) : 0;
+      const bDelivered = bOrders.filter((o) => o.status === 'DELIVERED');
+      const bOnTime = bDelivered.filter((o) => !o.delayReason && !o.deliveryDelay);
+      const bRate = bDelivered.length > 0 ? Math.round((bOnTime.length / bDelivered.length) * 100) : (bCount > 0 ? 100 : 0);
+      return { revenue: bRevenue, count: bCount, avg: bAvg, rate: bRate };
     });
 
-    const series = Object.values(dayMap);
+    const scale = (values) => {
+      const max = Math.max(...values);
+      if (max <= 0) return [20, 20, 20, 20, 20];
+      return values.map((v) => Math.max(15, Math.round((v / max) * 100)));
+    };
+
+    return {
+      revenue: scale(buckets.map((b) => b.revenue)),
+      orders: scale(buckets.map((b) => b.count)),
+      avg: scale(buckets.map((b) => b.avg)),
+      rate: buckets.map((b) => Math.max(15, b.rate)),
+    };
+  }, [orders, startOfToday]);
+
+  // 4. Revenue Last 14 Days (Real-time chart data with dynamic month formatting)
+  const revenue14DaysData = useMemo(() => {
+    const series = [];
+    const dayMs = 24 * 60 * 60 * 1000;
+    for (let i = 13; i >= 0; i--) {
+      const dayStart = startOfToday - (i * dayMs);
+      const dayEnd = dayStart + dayMs;
+      const d = new Date(dayStart);
+      const dayNum = String(d.getDate());
+      const monthShort = d.toLocaleDateString('en-IN', { month: 'short' });
+      const fullLabel = `${monthShort} ${dayNum}`;
+
+      const dayRevenue = orders
+        .filter((o) => (o.createdAt || 0) >= dayStart && (o.createdAt || 0) < dayEnd)
+        .reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+
+      series.push({
+        day: dayNum,
+        monthShort,
+        fullLabel,
+        amount: dayRevenue,
+        isToday: i === 0,
+      });
+    }
+
     const totalRev = series.reduce((sum, item) => sum + item.amount, 0);
 
     return {
       series,
       totalRevenue: totalRev,
     };
-  }, [orders, startOfToday, startOf14DaysAgo]);
+  }, [orders, startOfToday]);
 
-  // 4. Delivery Partners & Fleet Status (Real-time computed)
+  // Dynamic grid scale for 14-day chart
+  const chartMax = useMemo(() => {
+    const maxVal = Math.max(0, ...revenue14DaysData.series.map((s) => s.amount));
+    if (maxVal <= 0) return 1000;
+    if (maxVal <= 1000) return 1000;
+    if (maxVal <= 5000) return Math.ceil(maxVal / 1000) * 1000;
+    if (maxVal <= 20000) return Math.ceil(maxVal / 2500) * 2500;
+    return Math.ceil(maxVal / 5000) * 5000;
+  }, [revenue14DaysData.series]);
+
+  const gridLevels = useMemo(() => {
+    const step = chartMax / 3;
+    return [
+      chartMax,
+      Math.round(chartMax - step),
+      Math.round(chartMax - 2 * step),
+      0,
+    ];
+  }, [chartMax]);
+
+  // 5. Delivery Partners & Fleet Status (Real-time computed)
   const deliveryFleetData = useMemo(() => {
     const onDuty = partners.filter((p) => p.isOnDuty !== false && p.isActive !== false);
     const offDuty = partners.filter((p) => p.isOnDuty === false || p.isActive === false);
@@ -220,27 +373,39 @@ export default function Dashboard() {
     };
   }, [partners, orders]);
 
-  // 5. Recent Orders (Real-time)
+  // 6. Recent Orders (Real-time)
   const recentOrdersList = useMemo(() => {
     return orders.slice(0, 5).map((o) => {
       let pType = 'paid';
       let pText = 'Paid · Online';
-      if (o.paymentMethod === 'UPI_MANUAL') {
+      if (o.paymentMethod === 'COD' || o.paymentMethod === 'CASH_ON_DELIVERY') {
+        pType = 'cod';
+        pText = o.paymentStatus === 'PAID' ? 'COD · Paid' : 'Cash on delivery';
+      } else if (o.paymentMethod === 'UPI_MANUAL' || o.paymentMethod === 'UPI') {
         if (o.paymentStatus === 'PAID') {
           pType = 'paid';
           pText = 'Paid · UPI';
+        } else if (o.paymentStatus === 'FAILED') {
+          pType = 'failed';
+          pText = 'UPI · Failed';
         } else {
           pType = 'verify';
           pText = 'Verify UTR';
         }
-      } else if (o.paymentMethod === 'ONLINE' || o.paymentStatus === 'PAID') {
+      } else if (o.paymentStatus === 'PAID') {
         pType = 'paid';
         pText = 'Paid · Online';
+      } else if (o.paymentStatus === 'FAILED') {
+        pType = 'failed';
+        pText = 'Payment failed';
+      } else {
+        pType = 'pending';
+        pText = 'Pending';
       }
 
       let sType = 'new';
       let sText = 'New';
-      if (o.status === 'PACKING' || o.status === 'ORDER_ACCEPTED') {
+      if (o.status === 'PACKING' || o.status === 'ORDER_ACCEPTED' || o.status === 'ACCEPTED') {
         sType = 'packing';
         sText = 'Packing';
       } else if (o.status === 'OUT_FOR_DELIVERY') {
@@ -249,13 +414,18 @@ export default function Dashboard() {
       } else if (o.status === 'DELIVERED') {
         sType = 'paid';
         sText = 'Delivered';
+      } else if (o.status === 'CANCELLED') {
+        sType = 'cancelled';
+        sText = 'Cancelled';
       }
+
+      const cust = o.userName || o.customerName || o.addressSnapshot?.name || o.address?.name || 'Customer';
 
       return {
         id: o.id,
         displayId: `#${o.orderNo || o.id.slice(-4)}`,
-        customer: o.userName || o.customerName || 'Customer',
-        total: Math.round(o.total || 0),
+        customer: cust,
+        total: Math.round(Number(o.total) || 0),
         paymentText: pText,
         paymentType: pType,
         status: sText,
@@ -265,7 +435,7 @@ export default function Dashboard() {
     });
   }, [orders]);
 
-  // 6. Best Sellers this week (Dynamically calculated from order items)
+  // 7. Best Sellers this week (Dynamically calculated from real order items)
   const bestSellersList = useMemo(() => {
     const salesMap = {};
     orders.forEach((o) => {
@@ -274,7 +444,11 @@ export default function Dashboard() {
           const key = item.name || item.productName;
           if (!key) return;
           if (!salesMap[key]) {
-            salesMap[key] = { name: key, count: 0, image: item.image || item.photoURL };
+            salesMap[key] = {
+              name: key,
+              count: 0,
+              image: item.image || item.photoURL || null,
+            };
           }
           salesMap[key].count += (item.qty || item.quantity || 1);
         });
@@ -291,10 +465,8 @@ export default function Dashboard() {
     }));
   }, [orders, startOf7DaysAgo]);
 
-  const partnerCount = partners.length;
-
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 w-full">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 w-full animate-fade-in">
       {/* ── Greeting Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -346,13 +518,17 @@ export default function Dashboard() {
           className="bg-white rounded-2xl border border-gray-200/80 border-l-[5px] border-l-[#dc2626] p-4 flex items-center justify-between shadow-2xs hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="flex items-center gap-3">
-            <span className="text-2xl font-black text-[#dc2626] tracking-tight">{actionMetrics.newOrdersCount}</span>
+            <span className="text-2xl font-black text-[#dc2626] tracking-tight">
+              {actionMetrics.newOrdersCount}
+            </span>
             <div>
               <p className="text-xs font-extrabold text-gray-900 leading-tight group-hover:text-red-700 transition-colors">
                 New orders to accept
               </p>
               <p className="text-[11px] font-medium text-gray-400 mt-0.5">
-                Oldest waiting {actionMetrics.oldestMinutes} min
+                {actionMetrics.newOrdersCount > 0
+                  ? `Oldest waiting ${actionMetrics.oldestMinutes} min`
+                  : 'All orders processed'}
               </p>
             </div>
           </div>
@@ -365,13 +541,17 @@ export default function Dashboard() {
           className="bg-white rounded-2xl border border-gray-200/80 border-l-[5px] border-l-[#d97706] p-4 flex items-center justify-between shadow-2xs hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="flex items-center gap-3">
-            <span className="text-2xl font-black text-[#d97706] tracking-tight">{actionMetrics.unverifiedCount}</span>
+            <span className="text-2xl font-black text-[#d97706] tracking-tight">
+              {actionMetrics.unverifiedCount}
+            </span>
             <div>
               <p className="text-xs font-extrabold text-gray-900 leading-tight group-hover:text-amber-700 transition-colors">
                 Payments to verify
               </p>
               <p className="text-[11px] font-medium text-gray-400 mt-0.5">
-                ₹{formatRupee(actionMetrics.unverifiedAmount)} waiting
+                {actionMetrics.unverifiedCount > 0
+                  ? `₹${formatRupee(actionMetrics.unverifiedAmount)} waiting`
+                  : 'No pending payments'}
               </p>
             </div>
           </div>
@@ -384,13 +564,19 @@ export default function Dashboard() {
           className="bg-white rounded-2xl border border-gray-200/80 border-l-[5px] border-l-[#dc2626] p-4 flex items-center justify-between shadow-2xs hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="flex items-center gap-3">
-            <span className="text-2xl font-black text-[#dc2626] tracking-tight">{actionMetrics.openIssuesCount}</span>
+            <span className="text-2xl font-black text-[#dc2626] tracking-tight">
+              {actionMetrics.openIssuesCount}
+            </span>
             <div>
               <p className="text-xs font-extrabold text-gray-900 leading-tight group-hover:text-red-700 transition-colors">
                 Open issues
               </p>
               <p className="text-[11px] font-medium text-gray-400 mt-0.5">
-                {actionMetrics.overdueIssuesCount} past the 2-hour reply time
+                {actionMetrics.openIssuesCount > 0
+                  ? (actionMetrics.overdueIssuesCount > 0
+                      ? `${actionMetrics.overdueIssuesCount} past the 2-hour reply time`
+                      : `${actionMetrics.openIssuesCount} awaiting response`)
+                  : 'No open issues'}
               </p>
             </div>
           </div>
@@ -403,13 +589,17 @@ export default function Dashboard() {
           className="bg-white rounded-2xl border border-gray-200/80 border-l-[5px] border-l-[#1f2937] p-4 flex items-center justify-between shadow-2xs hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="flex items-center gap-3">
-            <span className="text-2xl font-black text-gray-900 tracking-tight">{actionMetrics.lowStockCount}</span>
+            <span className="text-2xl font-black text-gray-900 tracking-tight">
+              {actionMetrics.lowStockCount}
+            </span>
             <div>
               <p className="text-xs font-extrabold text-gray-900 leading-tight group-hover:text-emerald-700 transition-colors">
                 Low on stock
               </p>
               <p className="text-[11px] font-medium text-gray-400 mt-0.5 truncate max-w-[150px]">
-                {actionMetrics.lowStockNames}
+                {actionMetrics.lowStockCount > 0
+                  ? (actionMetrics.lowStockNames || `${actionMetrics.lowStockCount} items need restock`)
+                  : 'Inventory healthy'}
               </p>
             </div>
           </div>
@@ -421,29 +611,33 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Metric 1 */}
         <div className="bg-white rounded-2xl border border-gray-200/80 p-4 shadow-2xs flex flex-col justify-between">
-          <p className="text-xs font-bold text-gray-500">Revenue today</p>
+          <p className="text-xs font-bold text-gray-500">Revenue · {timeRange}</p>
           <div className="my-2">
-            <span className="text-2xl font-black text-gray-900 tracking-tight">₹{formatRupee(kpiData.revenueToday)}</span>
+            <span className="text-2xl font-black text-gray-900 tracking-tight">
+              ₹{formatRupee(kpiData.revenue)}
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-emerald-600">
-              Live <span className="font-semibold text-gray-400">today's gross</span>
+              Live <span className="font-semibold text-gray-400">{rangeConfig.revenueSubtitle}</span>
             </span>
-            <MiniSparkline heights={[40, 65, 45, 80, 100]} />
+            <MiniSparkline heights={sparklineData.revenue} />
           </div>
         </div>
 
         {/* Metric 2 */}
         <div className="bg-white rounded-2xl border border-gray-200/80 p-4 shadow-2xs flex flex-col justify-between">
-          <p className="text-xs font-bold text-gray-500">Orders today</p>
+          <p className="text-xs font-bold text-gray-500">Orders · {timeRange}</p>
           <div className="my-2">
-            <span className="text-2xl font-black text-gray-900 tracking-tight">{kpiData.ordersToday}</span>
+            <span className="text-2xl font-black text-gray-900 tracking-tight">
+              {kpiData.ordersCount}
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-emerald-600">
-              {kpiData.ordersToday} <span className="font-semibold text-gray-400">{kpiData.ordersToday === 1 ? 'order placed' : 'orders placed'}</span>
+              {kpiData.ordersCount} <span className="font-semibold text-gray-400">{kpiData.ordersCount === 1 ? 'order' : 'orders'} {rangeConfig.ordersSubtitle}</span>
             </span>
-            <MiniSparkline heights={[50, 40, 70, 85, 100]} />
+            <MiniSparkline heights={sparklineData.orders} />
           </div>
         </div>
 
@@ -451,13 +645,15 @@ export default function Dashboard() {
         <div className="bg-white rounded-2xl border border-gray-200/80 p-4 shadow-2xs flex flex-col justify-between">
           <p className="text-xs font-bold text-gray-500">Average order</p>
           <div className="my-2">
-            <span className="text-2xl font-black text-gray-900 tracking-tight">₹{formatRupee(kpiData.avgOrder)}</span>
+            <span className="text-2xl font-black text-gray-900 tracking-tight">
+              ₹{formatRupee(kpiData.avgOrder)}
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-gray-700">
               Per cart <span className="font-semibold text-gray-400">average</span>
             </span>
-            <MiniSparkline heights={[60, 50, 65, 45, 90]} />
+            <MiniSparkline heights={sparklineData.avg} />
           </div>
         </div>
 
@@ -465,13 +661,15 @@ export default function Dashboard() {
         <div className="bg-white rounded-2xl border border-gray-200/80 p-4 shadow-2xs flex flex-col justify-between">
           <p className="text-xs font-bold text-gray-500">Delivered on time</p>
           <div className="my-2">
-            <span className="text-2xl font-black text-gray-900 tracking-tight">{kpiData.onTimeRate}%</span>
+            <span className="text-2xl font-black text-gray-900 tracking-tight">
+              {kpiData.onTimeRate}%
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-emerald-600">
               On schedule <span className="font-semibold text-gray-400">rate</span>
             </span>
-            <MiniSparkline heights={[70, 65, 80, 85, 100]} />
+            <MiniSparkline heights={sparklineData.rate} />
           </div>
         </div>
       </div>
@@ -482,10 +680,10 @@ export default function Dashboard() {
         <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-200/80 p-5 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-extrabold text-gray-900 tracking-tight">
-              Revenue , last 14 days
+              Revenue — last 14 days
             </h2>
             <span className="text-xs font-bold text-gray-500">
-              Total <span className="text-gray-900">₹{formatRupee(revenue14DaysData.totalRevenue)}</span>
+              Total <span className="text-gray-900 font-extrabold">₹{formatRupee(revenue14DaysData.totalRevenue)}</span>
             </span>
           </div>
 
@@ -493,10 +691,12 @@ export default function Dashboard() {
           <div className="relative pt-6 pb-2">
             {/* Horizontal Gridlines */}
             <div className="absolute inset-x-0 top-6 bottom-7 flex flex-col justify-between pointer-events-none">
-              {[12, 8, 4, 0].map((k) => (
-                <div key={k} className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-gray-300 w-6 text-right">
-                    ₹{k}k
+              {gridLevels.map((val, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-gray-300 w-8 text-right">
+                    {val >= 1000
+                      ? `₹${(val / 1000).toFixed(val % 1000 === 0 ? 0 : 1)}k`
+                      : `₹${val}`}
                   </span>
                   <div className="flex-1 border-b border-gray-100 border-dashed" />
                 </div>
@@ -504,15 +704,16 @@ export default function Dashboard() {
             </div>
 
             {/* Bars */}
-            <div className="relative h-44 ml-8 flex items-end justify-between gap-1 sm:gap-2 px-1">
+            <div className="relative h-44 ml-10 flex items-end justify-between gap-1 sm:gap-2 px-1">
               {revenue14DaysData.series.map((item, idx) => {
-                const max = Math.max(12000, ...revenue14DaysData.series.map((s) => s.amount));
-                const heightPercent = Math.min(100, Math.round((item.amount / max) * 100));
+                const heightPercent = chartMax > 0 && item.amount > 0
+                  ? Math.max(8, Math.min(100, Math.round((item.amount / chartMax) * 100)))
+                  : 4;
                 const isHovered = hoveredBar === idx;
 
                 return (
                   <div
-                    key={item.day}
+                    key={`${item.fullLabel}-${idx}`}
                     onMouseEnter={() => setHoveredBar(idx)}
                     onMouseLeave={() => setHoveredBar(null)}
                     className="flex-1 flex flex-col items-center h-full justify-end group relative cursor-pointer"
@@ -520,19 +721,21 @@ export default function Dashboard() {
                     {/* Tooltip */}
                     {isHovered && (
                       <div className="absolute -top-8 px-2 py-1 bg-gray-900 text-white rounded text-[10px] font-bold whitespace-nowrap z-10 shadow-md">
-                        Oct {item.day}: ₹{formatRupee(item.amount)}
+                        {item.fullLabel}: ₹{formatRupee(item.amount)}
                       </div>
                     )}
 
                     {/* Bar */}
                     <div
-                      style={{ height: `${Math.max(8, heightPercent)}%` }}
+                      style={{ height: `${heightPercent}%` }}
                       className={`w-full max-w-[28px] rounded-t-md transition-all duration-300 ${
                         item.isToday
                           ? 'bg-[#0A7C47]'
                           : isHovered
                           ? 'bg-[#82ca9d]'
-                          : 'bg-[#A2D9B8]'
+                          : item.amount > 0
+                          ? 'bg-[#A2D9B8]'
+                          : 'bg-gray-100'
                       }`}
                     />
 
@@ -574,7 +777,7 @@ export default function Dashboard() {
             {/* Partners Duty List */}
             <div className="space-y-3">
               {deliveryFleetData.partnersList.length === 0 ? (
-                <div className="text-xs text-gray-400 text-center py-4">No registered partners yet</div>
+                <div className="text-xs text-gray-400 text-center py-8">No registered delivery partners yet</div>
               ) : (
                 deliveryFleetData.partnersList.map((p) => (
                   <div key={p.id} className="flex items-center justify-between p-2 rounded-xl bg-gray-50 border border-gray-100">
@@ -665,7 +868,17 @@ export default function Dashboard() {
                         )}
                         {order.paymentType === 'cod' && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-gray-100 text-gray-700 border border-gray-200/60">
-                            Cash on delivery
+                            {order.paymentText}
+                          </span>
+                        )}
+                        {order.paymentType === 'failed' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200/60">
+                            Failed
+                          </span>
+                        )}
+                        {order.paymentType === 'pending' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200/60">
+                            Pending
                           </span>
                         )}
                       </td>
@@ -683,6 +896,11 @@ export default function Dashboard() {
                         {order.statusType === 'paid' && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700">
                             {order.status}
+                          </span>
+                        )}
+                        {order.statusType === 'cancelled' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-gray-100 text-gray-500">
+                            Cancelled
                           </span>
                         )}
                       </td>
@@ -708,21 +926,28 @@ export default function Dashboard() {
               </p>
             ) : (
               bestSellersList.map((item) => {
-                const imgSrc = item.image || productImages[item.imageKey] || '/product-images/full_cream_milk.jpg';
+                const imgSrc = item.image || productImages[item.imageKey] || null;
                 return (
                   <div key={item.rank} className="flex items-center gap-3">
                     <span className="text-xs font-bold text-gray-400 w-3 text-center">
                       {item.rank}
                     </span>
-                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-50 border border-gray-100 shrink-0">
-                      <img
-                        src={imgSrc}
-                        alt={item.name}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.src = '/product-images/full_cream_milk.jpg';
-                        }}
-                      />
+                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-gray-50 border border-gray-100 shrink-0 flex items-center justify-center">
+                      {imgSrc ? (
+                        <img
+                          src={imgSrc}
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            if (e.currentTarget.parentElement) {
+                              e.currentTarget.parentElement.innerHTML = '<span class="text-gray-300 font-bold text-[10px]">MS</span>';
+                            }
+                          }}
+                        />
+                      ) : (
+                        <Package size={18} className="text-gray-400" />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold text-gray-900 truncate">{item.name}</p>

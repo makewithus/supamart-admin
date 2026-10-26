@@ -71,14 +71,14 @@ export default function DeliveryPartners() {
 
   // Map partners with live activity, counts, and duty status strictly from DB
   const partners = useMemo(() => {
-    return rawPartners.map((p) => {
-      const pOrders = orders.filter((o) => o.assignedPartnerId === p.id);
+    return (rawPartners || []).filter(Boolean).map((p) => {
+      const pOrders = (orders || []).filter((o) => o && o.assignedPartnerId === p.id);
       const activeOrders = pOrders.filter((o) => o.status === 'OUT_FOR_DELIVERY' || o.status === 'ORDER_ACCEPTED' || o.status === 'PENDING_CONFIRMATION');
       const deliveredOrders = pOrders.filter((o) => o.status === 'DELIVERED');
       const deliveredTodayCount = deliveredOrders.length;
       const onTimeDelivered = deliveredOrders.filter((o) => !o.delayReason && !o.deliveryDelay);
 
-      let online = p.isOnDuty !== false && p.isActive !== false;
+      let online = p?.isOnDuty !== false && p?.isActive !== false;
       let status = 'On duty';
       let statusType = 'at_store';
       let subText = 'Available · Ready for orders';
@@ -101,11 +101,11 @@ export default function DeliveryPartners() {
         : '—';
 
       return {
-        id: p.id,
-        initial: (p.name || 'P')[0]?.toUpperCase(),
-        name: p.name || 'Partner',
-        phone: maskPhone(p.mobile || p.phone),
-        fullPhone: p.mobile || p.phone || '',
+        id: p?.id || 'partner',
+        initial: (p?.name || 'P')[0]?.toUpperCase() || 'P',
+        name: p?.name || 'Partner',
+        phone: maskPhone(p?.mobile || p?.phone),
+        fullPhone: p?.mobile || p?.phone || '',
         status,
         statusType,
         online,
@@ -114,8 +114,8 @@ export default function DeliveryPartners() {
         activeOrdersCount: activeOrders.length,
         onTime: onTimePercent,
         btnAction,
-        currentLocation: p.currentLocation || null,
-        lastSyncedAt: p.lastSyncedAt || null,
+        currentLocation: p?.currentLocation || null,
+        lastSyncedAt: p?.lastSyncedAt || null,
         raw: p,
       };
     });
@@ -123,10 +123,10 @@ export default function DeliveryPartners() {
 
   // Comprehensive deliveries list for real-time tracking
   const deliveriesList = useMemo(() => {
-    return orders
-      .filter((o) => o.status !== 'CANCELLED')
+    return (orders || [])
+      .filter((o) => o && o.status !== 'CANCELLED')
       .map((o) => {
-        const orderNo = o.orderNo ? `#${o.orderNo}` : `#${o.id.slice(-4)}`;
+        const orderNo = o.orderNo ? `#${o.orderNo}` : (o.id ? `#${o.id.slice(-4)}` : '#----');
         const customer = o.userName || o.addressSnapshot?.name || o.address?.name || 'Customer';
         const phone = o.userPhone || o.addressSnapshot?.phone || o.address?.phone || '';
         const rawAddr = o.address || o.addressSnapshot;
@@ -135,9 +135,9 @@ export default function DeliveryPartners() {
           : rawAddr?.formattedAddress || [rawAddr?.houseNo, rawAddr?.street, rawAddr?.landmark, rawAddr?.city].filter(Boolean).join(', ') || 'Address on file';
         const instructions = o.deliveryInstructions || o.instructions || o.notes || '';
         const items = Array.isArray(o.items) ? o.items : [];
-        const itemsSummary = items.map((it) => `${it.name} (x${it.quantity || it.qty || 1})`).join(', ');
+        const itemsSummary = items.map((it) => `${it?.name || 'Item'} (x${it?.quantity || it?.qty || 1})`).join(', ');
 
-        const assignedPartner = rawPartners.find((p) => p.id === o.assignedPartnerId);
+        const assignedPartner = Array.isArray(rawPartners) ? rawPartners.find((p) => p && p.id === o.assignedPartnerId) : null;
         const partnerName = o.deliveryBoyName || assignedPartner?.name || 'Unassigned';
         const partnerPhone = o.deliveryBoyPhone || assignedPartner?.mobile || assignedPartner?.phone || '';
         const acceptanceStatus = o.deliveryAcceptanceStatus || (o.assignedPartnerId ? 'PENDING' : null);

@@ -33,24 +33,55 @@ function shouldShowEnablePrompt() {
   return localStorage.getItem(ALERTS_DISMISSED_KEY) !== '1';
 }
 
+import ErrorBoundary from './components/ErrorBoundary';
+
+// Helper to auto-retry chunk import once if a new deployment removed old chunks on Vercel
+function lazyWithRetry(componentImport) {
+  return lazy(async () => {
+    try {
+      const mod = await componentImport();
+      // On successful load, clear chunk retry flags
+      try { sessionStorage.removeItem('chunk_retry_' + window.location.pathname); } catch (_) {}
+      return mod;
+    } catch (error) {
+      const message = error?.message || String(error);
+      const isChunkError =
+        message.includes('Failed to fetch dynamically imported module') ||
+        message.includes('Loading chunk') ||
+        message.includes('Importing a module script failed');
+
+      if (isChunkError) {
+        const key = 'chunk_retry_' + window.location.pathname;
+        const reloaded = sessionStorage.getItem(key);
+        if (!reloaded) {
+          sessionStorage.setItem(key, 'true');
+          window.location.reload();
+          return new Promise(() => {});
+        }
+      }
+      throw error;
+    }
+  });
+}
+
 // Each admin page is its own chunk — only the page the admin is currently on
 // gets downloaded, instead of one ~800kB bundle for all 7 pages up front.
-const Dashboard        = lazy(() => import('./pages/Dashboard'));
-const Products         = lazy(() => import('./pages/Products'));
-const Orders           = lazy(() => import('./pages/Orders'));
-const Accounts         = lazy(() => import('./pages/Accounts'));
-const DeliveryPartners = lazy(() => import('./pages/DeliveryPartners'));
-const Categories       = lazy(() => import('./pages/Categories'));
-const Brands           = lazy(() => import('./pages/Brands'));
-const Customers        = lazy(() => import('./pages/Customers'));
-const MSClub           = lazy(() => import('./pages/MSClub'));
-const PushNotifications = lazy(() => import('./pages/PushNotifications'));
-const Reports          = lazy(() => import('./pages/Reports'));
-const Offers           = lazy(() => import('./pages/Offers'));
-const Settings         = lazy(() => import('./pages/Settings'));
-const RefundRequests   = lazy(() => import('./pages/RefundRequests'));
-const Issues           = lazy(() => import('./pages/Issues'));
-const Feedback         = lazy(() => import('./pages/Feedback'));
+const Dashboard        = lazyWithRetry(() => import('./pages/Dashboard'));
+const Products         = lazyWithRetry(() => import('./pages/Products'));
+const Orders           = lazyWithRetry(() => import('./pages/Orders'));
+const Accounts         = lazyWithRetry(() => import('./pages/Accounts'));
+const DeliveryPartners = lazyWithRetry(() => import('./pages/DeliveryPartners'));
+const Categories       = lazyWithRetry(() => import('./pages/Categories'));
+const Brands           = lazyWithRetry(() => import('./pages/Brands'));
+const Customers        = lazyWithRetry(() => import('./pages/Customers'));
+const MSClub           = lazyWithRetry(() => import('./pages/MSClub'));
+const PushNotifications = lazyWithRetry(() => import('./pages/PushNotifications'));
+const Reports          = lazyWithRetry(() => import('./pages/Reports'));
+const Offers           = lazyWithRetry(() => import('./pages/Offers'));
+const Settings         = lazyWithRetry(() => import('./pages/Settings'));
+const RefundRequests   = lazyWithRetry(() => import('./pages/RefundRequests'));
+const Issues           = lazyWithRetry(() => import('./pages/Issues'));
+const Feedback         = lazyWithRetry(() => import('./pages/Feedback'));
 
 function PageFallback() {
   return (
@@ -98,31 +129,33 @@ function AppShell() {
                 onDismiss={dismissEnablePrompt}
               />
             )}
-            <Suspense fallback={<PageFallback />}>
-              <Routes>
-                <Route path="/"                   element={<Dashboard />} />
-                <Route path="/dashboard"          element={<Dashboard />} />
-                <Route path="/products"           element={<Products />}  />
-                <Route path="/orders"             element={<Orders />}    />
-                <Route path="/deliveries"         element={<DeliveryPartners />} />
-                <Route path="/delivery-partners"  element={<DeliveryPartners />} />
-                <Route path="/payments"           element={<Accounts />}  />
-                <Route path="/accounts"           element={<Accounts />}  />
-                <Route path="/refunds"            element={<RefundRequests />} />
-                <Route path="/issues"             element={<Issues />} />
-                <Route path="/feedback"           element={<Feedback />} />
-                <Route path="/ratings"            element={<Feedback />} />
-                <Route path="/categories"         element={<Categories />}/>
-                <Route path="/brands"             element={<Brands />}    />
-                <Route path="/customers"          element={<Customers />} />
-                <Route path="/ms-club"            element={<MSClub />} />
-                <Route path="/offers"             element={<Offers />}    />
-                <Route path="/push-notifications" element={<PushNotifications />}  />
-                <Route path="/reports"            element={<Reports />} />
-                <Route path="/settings"           element={<Settings />}  />
-                <Route path="/admin-login" element={<Navigate to="/" replace />} />
-              </Routes>
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense fallback={<PageFallback />}>
+                <Routes>
+                  <Route path="/"                   element={<Dashboard />} />
+                  <Route path="/dashboard"          element={<Dashboard />} />
+                  <Route path="/products"           element={<Products />}  />
+                  <Route path="/orders"             element={<Orders />}    />
+                  <Route path="/deliveries"         element={<DeliveryPartners />} />
+                  <Route path="/delivery-partners"  element={<DeliveryPartners />} />
+                  <Route path="/payments"           element={<Accounts />}  />
+                  <Route path="/accounts"           element={<Accounts />}  />
+                  <Route path="/refunds"            element={<RefundRequests />} />
+                  <Route path="/issues"             element={<Issues />} />
+                  <Route path="/feedback"           element={<Feedback />} />
+                  <Route path="/ratings"            element={<Feedback />} />
+                  <Route path="/categories"         element={<Categories />}/>
+                  <Route path="/brands"             element={<Brands />}    />
+                  <Route path="/customers"          element={<Customers />} />
+                  <Route path="/ms-club"            element={<MSClub />} />
+                  <Route path="/offers"             element={<Offers />}    />
+                  <Route path="/push-notifications" element={<PushNotifications />}  />
+                  <Route path="/reports"            element={<Reports />} />
+                  <Route path="/settings"           element={<Settings />}  />
+                  <Route path="/admin-login" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Suspense>
+            </ErrorBoundary>
           </main>
         </div>
       </div>
@@ -177,8 +210,15 @@ export default function App() {
         // persisted Firebase session actually needs: without it, "the login screen
         // is never shown" is not a bug, it's the expected behavior of
         // browserLocalPersistence with nothing telling it to expire.
-        if (localStorage.getItem('ms_admin_build_id') !== __BUILD_ID__) {
-          await signOut(auth);
+        if (typeof __BUILD_ID__ !== 'undefined' && localStorage.getItem('ms_admin_build_id') !== __BUILD_ID__) {
+          try {
+            await signOut(auth);
+          } catch (e) {
+            console.error('Sign out error on build mismatch:', e);
+          }
+          setUser(null);
+          setIsAdmin(false);
+          setLoading(false);
           return;
         }
 

@@ -6,7 +6,7 @@ import {
 import { db } from '../config/firebase';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import OrderDetailsModal from '../components/OrderDetailsModal';
-import { apiPatch } from '../services/api';
+import { apiPatch, apiGet } from '../services/api';
 import toast from 'react-hot-toast';
 
 function formatRelativeTime(ms) {
@@ -51,97 +51,114 @@ export default function Orders() {
     return () => unsub();
   }, []);
 
-  // Subscribe to live orders in real-time from Firestore
+function mapOrderDoc(id, data) {
+  const createdAt = data.createdAt || Date.now();
+  const orderNo = data.orderNo ? String(data.orderNo) : id.slice(-4);
+  const customerName = data.userName || data.addressSnapshot?.name || data.address?.name || 'Customer';
+  const phone = data.userPhone || data.addressSnapshot?.phone || data.address?.phone || '';
+  const area = data.addressSnapshot?.city || data.address?.city || data.addressSnapshot?.area || data.addressSnapshot?.locality || '';
+  const phoneArea = `${maskPhone(phone)}${phone && area ? ' · ' : ''}${area}`;
+
+  // Normalize statusKey
+  let statusKey = 'NEW';
+  const rawStatus = (data.status || '').toUpperCase();
+  if (rawStatus === 'ORDER_PLACED' || rawStatus === 'NEW' || rawStatus === 'PLACED') {
+    statusKey = 'NEW';
+  } else if (rawStatus === 'ORDER_ACCEPTED' || rawStatus === 'PACKING' || rawStatus === 'ACCEPTED') {
+    statusKey = 'PACKING';
+  } else if (rawStatus === 'OUT_FOR_DELIVERY') {
+    statusKey = 'OUT_FOR_DELIVERY';
+  } else if (rawStatus === 'DELIVERED') {
+    statusKey = 'DELIVERED';
+  } else if (rawStatus === 'CANCELLED') {
+    statusKey = 'CANCELLED';
+  } else if (rawStatus === 'DISPUTED') {
+    statusKey = 'DISPUTED';
+  }
+
+  // Payment classification
+  let paymentType = 'paid';
+  let paymentText = 'Paid · UPI';
+  if (data.paymentStatus === 'AWAITING_CONFIRMATION' || data.paymentStatus === 'PENDING') {
+    paymentType = 'verify';
+    paymentText = 'Verify UTR';
+  } else if (data.paymentStatus === 'FAILED') {
+    paymentType = 'failed';
+    paymentText = 'Payment failed';
+  } else {
+    paymentType = 'paid';
+    paymentText = 'Paid · Online';
+  }
+
+  const partner = data.deliveryBoyName || data.deliveryPartner?.name || (statusKey === 'PACKING' || statusKey === 'NEW' ? 'Not assigned' : '—');
+  const assignedPartnerId = data.assignedPartnerId || data.deliveryBoyId || null;
+  const deliveryAcceptanceStatus = data.deliveryAcceptanceStatus || (assignedPartnerId ? 'PENDING' : null);
+  const delayReason = data.delayReason || null;
+  const deliveryDelay = data.deliveryDelay || null;
+  const itemsCount = (data.items || []).length;
+  const total = Math.round(Number(data.total || data.totalAmount) || 0);
+
+  return {
+    id,
+    orderNo,
+    customer: customerName,
+    phoneArea,
+    itemsCount,
+    total,
+    paymentText,
+    paymentType,
+    assignedPartnerId,
+    deliveryAcceptanceStatus,
+    delayReason,
+    deliveryDelay,
+    status: statusKey === 'NEW' ? 'New' : statusKey === 'PACKING' ? 'Packing' : statusKey === 'OUT_FOR_DELIVERY' ? 'Out for delivery' : statusKey === 'DELIVERED' ? 'Delivered' : statusKey === 'CANCELLED' ? 'Cancelled' : 'Disputed',
+    statusKey,
+    partner,
+    placed: formatRelativeTime(createdAt),
+    createdAt,
+    urgent: statusKey === 'NEW',
+    raw: { id, ...data },
+  };
+}
+
+  const fetchOrdersFromApi = async () => {
+    try {
+      const data = await apiGet('/orders?limit=100');
+      const items = Array.isArray(data) ? data : data?.items || [];
+      if (items.length > 0) {
+        setOrders(items.map((it) => mapOrderDoc(it.id, it)));
+      }
+    } catch (_) {}
+    setLoading(false);
+  };
+
+  // Subscribe to live orders in real-time from Firestore with robust API fallback
   useEffect(() => {
+    fetchOrdersFromApi();
+    const interval = setInterval(fetchOrdersFromApi, 10000);
+
     try {
       const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
       const unsub = onSnapshot(
         q,
         (snap) => {
-          const list = snap.docs.map((d) => {
-            const data = d.data();
-            const createdAt = data.createdAt || Date.now();
-            const orderNo = data.orderNo ? String(data.orderNo) : d.id.slice(-4);
-            const customerName = data.userName || data.addressSnapshot?.name || data.address?.name || 'Customer';
-            const phone = data.userPhone || data.addressSnapshot?.phone || data.address?.phone || '';
-            const area = data.addressSnapshot?.city || data.address?.city || data.addressSnapshot?.area || 'Menamkulam';
-            const phoneArea = `${maskPhone(phone)}${phone && area ? ' · ' : ''}${area}`;
-
-            // Normalize statusKey
-            let statusKey = 'NEW';
-            const rawStatus = (data.status || '').toUpperCase();
-            if (rawStatus === 'ORDER_PLACED' || rawStatus === 'NEW' || rawStatus === 'PLACED') {
-              statusKey = 'NEW';
-            } else if (rawStatus === 'ORDER_ACCEPTED' || rawStatus === 'PACKING' || rawStatus === 'ACCEPTED') {
-              statusKey = 'PACKING';
-            } else if (rawStatus === 'OUT_FOR_DELIVERY') {
-              statusKey = 'OUT_FOR_DELIVERY';
-            } else if (rawStatus === 'DELIVERED') {
-              statusKey = 'DELIVERED';
-            } else if (rawStatus === 'CANCELLED') {
-              statusKey = 'CANCELLED';
-            } else if (rawStatus === 'DISPUTED') {
-              statusKey = 'DISPUTED';
-            }
-
-            // Payment classification
-            let paymentType = 'paid';
-            let paymentText = 'Paid · UPI';
-            if (data.paymentStatus === 'AWAITING_CONFIRMATION' || data.paymentStatus === 'PENDING') {
-              paymentType = 'verify';
-              paymentText = 'Verify UTR';
-            } else if (data.paymentStatus === 'FAILED') {
-              paymentType = 'failed';
-              paymentText = 'Payment failed';
-            } else {
-              paymentType = 'paid';
-              paymentText = 'Paid · Online';
-            }
-
-            const partner = data.deliveryBoyName || data.deliveryPartner?.name || (statusKey === 'PACKING' || statusKey === 'NEW' ? 'Not assigned' : '—');
-            const assignedPartnerId = data.assignedPartnerId || data.deliveryBoyId || null;
-            const deliveryAcceptanceStatus = data.deliveryAcceptanceStatus || (assignedPartnerId ? 'PENDING' : null);
-            const delayReason = data.delayReason || null;
-            const deliveryDelay = data.deliveryDelay || null;
-            const itemsCount = (data.items || []).length;
-            const total = Math.round(Number(data.total || data.totalAmount) || 0);
-
-            return {
-              id: d.id,
-              orderNo,
-              customer: customerName,
-              phoneArea,
-              itemsCount,
-              total,
-              paymentText,
-              paymentType,
-              assignedPartnerId,
-              deliveryAcceptanceStatus,
-              delayReason,
-              deliveryDelay,
-              status: statusKey === 'NEW' ? 'New' : statusKey === 'PACKING' ? 'Packing' : statusKey === 'OUT_FOR_DELIVERY' ? 'Out for delivery' : statusKey === 'DELIVERED' ? 'Delivered' : statusKey === 'CANCELLED' ? 'Cancelled' : 'Disputed',
-              statusKey,
-              partner,
-              placed: formatRelativeTime(createdAt),
-              createdAt,
-              urgent: statusKey === 'NEW',
-              raw: { id: d.id, ...data },
-            };
-          });
-
+          const list = snap.docs.map((d) => mapOrderDoc(d.id, d.data()));
           setOrders(list);
           setLoading(false);
         },
         (err) => {
           console.error('Error listening to orders:', err);
-          setLoading(false);
+          fetchOrdersFromApi();
         }
       );
 
-      return () => unsub();
+      return () => {
+        clearInterval(interval);
+        unsub();
+      };
     } catch (e) {
       console.error(e);
-      setLoading(false);
+      fetchOrdersFromApi();
     }
   }, []);
 
@@ -412,19 +429,20 @@ export default function Orders() {
                 <th className="py-3 px-3">STATUS</th>
                 <th className="py-3 px-3">PARTNER</th>
                 <th className="py-3 px-4">PLACED</th>
+                <th className="py-3 px-4 text-right">ACTION</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-gray-100 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-gray-400 font-semibold">
+                  <td colSpan={10} className="py-12 text-center text-gray-400 font-semibold">
                     Loading live orders from database…
                   </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-gray-400 font-semibold">
+                  <td colSpan={10} className="py-12 text-center text-gray-400 font-semibold">
                     No orders matching this filter.
                   </td>
                 </tr>
@@ -570,6 +588,16 @@ export default function Orders() {
 
                       <td className="py-3 px-4 text-gray-400 font-semibold whitespace-nowrap">
                         {o.placed}
+                      </td>
+
+                      <td className="py-3 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOrderForDrawer(o.raw)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-emerald-500 hover:text-emerald-700 font-bold text-xs text-gray-700 bg-white hover:bg-emerald-50/50 transition-colors shadow-2xs"
+                        >
+                          <Eye size={13} /> Details
+                        </button>
                       </td>
                     </tr>
                   );
