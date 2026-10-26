@@ -74,7 +74,11 @@ export default function DeliveryPartners() {
   const partners = useMemo(() => {
     return (rawPartners || []).filter(Boolean).map((p) => {
       const pOrders = (orders || []).filter((o) => o && o.assignedPartnerId === p.id);
-      const activeOrders = pOrders.filter((o) => o.status === 'OUT_FOR_DELIVERY' || o.status === 'ORDER_ACCEPTED' || o.status === 'PENDING_CONFIRMATION');
+      const activeOrders = pOrders.filter(
+        (o) =>
+          (o.status === 'OUT_FOR_DELIVERY' || o.status === 'ORDER_ACCEPTED' || o.status === 'PENDING_CONFIRMATION') &&
+          o.deliveryAcceptanceStatus !== 'REJECTED'
+      );
       const deliveredOrders = pOrders.filter((o) => o.status === 'DELIVERED');
       const deliveredTodayCount = deliveredOrders.length;
       const onTimeDelivered = deliveredOrders.filter((o) => !o.delayReason && !o.deliveryDelay);
@@ -521,11 +525,21 @@ export default function DeliveryPartners() {
                         {/* Assign / Re-assign Dropdown (Only On Duty Partners) */}
                         {!d.isDelivered && (
                           <select
-                            value={d.assignedPartnerId || ''}
+                            value={d.acceptanceStatus === 'REJECTED' ? '' : (d.assignedPartnerId || '')}
                             onChange={(e) => handleAssign(d.id, e.target.value)}
-                            className="w-full px-2 py-1 bg-white border border-gray-200 rounded-lg text-[11px] font-semibold text-gray-700 focus:outline-none focus:border-emerald-600 cursor-pointer shadow-2xs"
+                            className={`w-full px-2 py-1 rounded-lg text-[11px] font-semibold focus:outline-none focus:border-emerald-600 cursor-pointer shadow-2xs border ${
+                              d.acceptanceStatus === 'REJECTED'
+                                ? 'bg-rose-50 border-rose-300 text-rose-900 font-bold'
+                                : 'bg-white border-gray-200 text-gray-700'
+                            }`}
                           >
-                            <option value="">{d.assignedPartnerId ? 'Re-assign partner...' : 'Assign partner...'}</option>
+                            <option value="">
+                              {d.acceptanceStatus === 'REJECTED'
+                                ? '⚠️ Re-assign partner...'
+                                : d.assignedPartnerId
+                                ? 'Re-assign partner...'
+                                : 'Assign partner...'}
+                            </option>
                             {partners.map((p) => {
                               const isOffDuty = p.isOnDuty === false || p.isActive === false;
                               return (

@@ -701,7 +701,7 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                 )}
                 {activeOrderData.deliveryAcceptanceStatus === 'REJECTED' && (
                   <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200">
-                    Rejected
+                    Assignment Rejected
                   </span>
                 )}
                 {activeOrderData.deliveryAcceptanceStatus === 'PENDING' && (
@@ -713,11 +713,21 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
 
               <select
                 disabled={assigningPartner || activeOrderData.status === 'DELIVERED'}
-                value={activeOrderData.assignedPartnerId || ''}
+                value={activeOrderData.deliveryAcceptanceStatus === 'REJECTED' ? '' : (activeOrderData.assignedPartnerId || '')}
                 onChange={(e) => handleAssignPartnerModal(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:border-emerald-600 focus:bg-white cursor-pointer shadow-2xs"
+                className={`w-full px-3 py-2 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-600 focus:bg-white cursor-pointer shadow-2xs border ${
+                  activeOrderData.deliveryAcceptanceStatus === 'REJECTED'
+                    ? 'border-rose-300 bg-rose-50 text-rose-900 font-bold'
+                    : 'border-gray-200 bg-gray-50 text-gray-800'
+                }`}
               >
-                <option value="">{activeOrderData.assignedPartnerId ? 'Re-assign partner...' : 'Select on-duty partner...'}</option>
+                <option value="">
+                  {activeOrderData.deliveryAcceptanceStatus === 'REJECTED'
+                    ? '⚠️ Rejected — Re-assign new partner...'
+                    : activeOrderData.assignedPartnerId
+                    ? 'Re-assign partner...'
+                    : 'Select on-duty partner...'}
+                </option>
                 {partners.map((p) => {
                   const isOffDuty = p.isOnDuty === false || p.isActive === false;
                   return (
@@ -728,11 +738,15 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                 })}
               </select>
 
-              {activeOrderData.deliveryBoyName && (
+              {activeOrderData.deliveryAcceptanceStatus === 'REJECTED' ? (
+                <p className="text-[11px] text-rose-700 font-semibold">
+                  ⚠️ Previous assignment was rejected by {activeOrderData.rejectedByPartnerName || activeOrderData.deliveryBoyName || 'partner'}. Select an on-duty partner to re-assign.
+                </p>
+              ) : activeOrderData.deliveryBoyName ? (
                 <p className="text-[11px] text-gray-500 font-medium">
                   Assigned to <span className="font-bold text-gray-800">{activeOrderData.deliveryBoyName}</span> ({activeOrderData.deliveryBoyPhone || 'Phone unavailable'})
                 </p>
-              )}
+              ) : null}
             </div>
           </div>
 

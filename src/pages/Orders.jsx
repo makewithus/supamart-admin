@@ -254,6 +254,15 @@ function mapOrderDoc(id, data) {
     return orders.filter((o) => o.statusKey === 'NEW');
   }, [orders]);
 
+  const rejectedOrdersWaiting = useMemo(() => {
+    return orders.filter(
+      (o) =>
+        o.deliveryAcceptanceStatus === 'REJECTED' &&
+        o.statusKey !== 'DELIVERED' &&
+        o.statusKey !== 'CANCELLED'
+    );
+  }, [orders]);
+
   return (
     <div className="p-6 lg:p-8 space-y-6 w-full animate-fade-in">
       {/* ── Page Header ── */}
@@ -324,6 +333,18 @@ function mapOrderDoc(id, data) {
           >
             Review new orders
           </button>
+        </div>
+      )}
+
+      {/* ── Rejected Orders Alert Banner ── */}
+      {rejectedOrdersWaiting.length > 0 && (
+        <div className="p-4 bg-amber-50/90 border border-amber-200/90 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+            <p className="text-xs font-semibold text-amber-950">
+              <span className="font-bold">{rejectedOrdersWaiting.length} {rejectedOrdersWaiting.length === 1 ? 'order delivery assignment was' : 'order delivery assignments were'} rejected</span> by partner. Please re-assign to an on-duty delivery partner below.
+            </p>
+          </div>
         </div>
       )}
 
@@ -545,10 +566,16 @@ function mapOrderDoc(id, data) {
                         {o.statusKey === 'DELIVERED' || o.statusKey === 'CANCELLED' ? (
                           <span className="font-bold text-gray-900">{o.partner}</span>
                         ) : (
-                          <div className="flex flex-col gap-1 min-w-[150px]">
+                          <div className="flex flex-col gap-1 min-w-[160px]">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold text-xs text-gray-900">
-                                {o.partner && o.partner !== 'Not assigned' && o.partner !== '—' ? o.partner : 'Unassigned'}
+                                {o.deliveryAcceptanceStatus === 'REJECTED'
+                                  ? (o.partner && o.partner !== 'Not assigned' && o.partner !== '—'
+                                      ? `Rejected by ${o.partner}`
+                                      : 'Assignment Rejected')
+                                  : (o.partner && o.partner !== 'Not assigned' && o.partner !== '—'
+                                      ? o.partner
+                                      : 'Unassigned')}
                               </span>
                               {o.deliveryAcceptanceStatus === 'ACCEPTED' && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800">
@@ -556,7 +583,7 @@ function mapOrderDoc(id, data) {
                                 </span>
                               )}
                               {o.deliveryAcceptanceStatus === 'REJECTED' && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-100 text-rose-800">
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200">
                                   Rejected
                                 </span>
                               )}
@@ -568,11 +595,21 @@ function mapOrderDoc(id, data) {
                             </div>
 
                             <select
-                              value={o.assignedPartnerId || ''}
+                              value={o.deliveryAcceptanceStatus === 'REJECTED' ? '' : (o.assignedPartnerId || '')}
                               onChange={(e) => handleAssignPartner(o.id, e.target.value)}
-                              className="text-[11px] font-semibold py-1 px-1.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 focus:outline-none focus:border-emerald-600 focus:bg-white cursor-pointer shadow-2xs"
+                              className={`text-[11px] font-semibold py-1 px-1.5 rounded-lg focus:outline-none focus:border-emerald-600 focus:bg-white cursor-pointer shadow-2xs border ${
+                                o.deliveryAcceptanceStatus === 'REJECTED'
+                                  ? 'bg-rose-50 border-rose-300 text-rose-900 font-bold'
+                                  : 'bg-gray-50 border-gray-200 text-gray-700'
+                              }`}
                             >
-                              <option value="">{o.assignedPartnerId ? 'Re-assign partner...' : 'Assign partner...'}</option>
+                              <option value="">
+                                {o.deliveryAcceptanceStatus === 'REJECTED'
+                                  ? '⚠️ Re-assign new partner...'
+                                  : o.assignedPartnerId
+                                  ? 'Re-assign partner...'
+                                  : 'Assign partner...'}
+                              </option>
                               {partners.map((p) => {
                                 const isOffDuty = p.isOnDuty === false || p.isActive === false;
                                 return (
