@@ -211,6 +211,7 @@ export default function App() {
         // is never shown" is not a bug, it's the expected behavior of
         // browserLocalPersistence with nothing telling it to expire.
         if (typeof __BUILD_ID__ !== 'undefined' && localStorage.getItem('ms_admin_build_id') !== __BUILD_ID__) {
+          sawUser = false;
           try {
             await signOut(auth);
           } catch (e) {
@@ -267,7 +268,8 @@ export default function App() {
         // gesture in EnableAlertsPrompt.jsx, per the no-auto-prompt requirement.
         if (admin) {
           initPushNotifications({ requestPermission: false }).then((pushResult) => {
-            if (!pushResult.ok && pushResult.reason !== 'permission-not-yet-requested' && pushResult.reason !== 'no-vapid-key') {
+            const ignoredReasons = ['permission-not-yet-requested', 'no-vapid-key', 'not-authenticated', 'unauthorized'];
+            if (!pushResult.ok && !ignoredReasons.includes(pushResult.reason)) {
               console.error('Push notification silent restore failed:', pushResult.reason, pushResult.error || '');
             }
           });

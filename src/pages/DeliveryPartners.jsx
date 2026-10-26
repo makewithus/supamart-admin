@@ -7,6 +7,7 @@ import { db } from '../config/firebase';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { apiPost, apiPatch } from '../services/api';
 import toast from 'react-hot-toast';
+import { formatDeliveryInstructions, formatAddress } from '../utils/orderUtils';
 
 function maskPhone(phone) {
   if (!phone) return '';
@@ -130,10 +131,8 @@ export default function DeliveryPartners() {
         const customer = o.userName || o.addressSnapshot?.name || o.address?.name || 'Customer';
         const phone = o.userPhone || o.addressSnapshot?.phone || o.address?.phone || '';
         const rawAddr = o.address || o.addressSnapshot;
-        const formattedAddr = typeof rawAddr === 'string'
-          ? rawAddr
-          : rawAddr?.formattedAddress || [rawAddr?.houseNo, rawAddr?.street, rawAddr?.landmark, rawAddr?.city].filter(Boolean).join(', ') || 'Address on file';
-        const instructions = o.deliveryInstructions || o.instructions || o.notes || '';
+        const formattedAddr = formatAddress(rawAddr);
+        const instructions = formatDeliveryInstructions(o.deliveryInstructions || o.instructions || o.notes);
         const items = Array.isArray(o.items) ? o.items : [];
         const itemsSummary = items.map((it) => `${it?.name || 'Item'} (x${it?.quantity || it?.qty || 1})`).join(', ');
 
@@ -484,7 +483,7 @@ export default function DeliveryPartners() {
                       </div>
                       {d.instructions ? (
                         <div className="mt-1.5 p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-900 font-semibold">
-                          📌 {d.instructions}
+                          📌 {typeof d.instructions === 'string' ? d.instructions : String(d.instructions)}
                         </div>
                       ) : null}
                     </td>

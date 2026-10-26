@@ -9,6 +9,7 @@ import { apiPatch } from '../services/api';
 import productImages from '../utils/productImages';
 import { db } from '../config/firebase';
 import { doc, onSnapshot, collection } from 'firebase/firestore';
+import { formatDeliveryInstructions } from '../utils/orderUtils';
 
 const STEPS = [
   { id: 'ORDER_PLACED', label: 'Placed' },
@@ -105,10 +106,7 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
     }
     return String(rawAddr);
   })();
-  const instructions = (typeof activeOrderData.deliveryInstructions === 'string' ? activeOrderData.deliveryInstructions : null)
-    || (typeof activeOrderData.instructions === 'string' ? activeOrderData.instructions : null)
-    || (typeof activeOrderData.notes === 'string' ? activeOrderData.notes : null)
-    || '';
+  const instructions = formatDeliveryInstructions(activeOrderData.deliveryInstructions || activeOrderData.instructions || activeOrderData.notes);
   const placedTime = activeOrderData.placed || (activeOrderData.createdAt ? new Date(activeOrderData.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '');
   const paymentMethod = typeof activeOrderData.paymentMethod === 'string' ? activeOrderData.paymentMethod : 'UPI';
   const utr = (typeof activeOrderData.paymentDetails?.utr === 'string' ? activeOrderData.paymentDetails.utr : null)

@@ -1,5 +1,5 @@
 import { getToken, onMessage } from 'firebase/messaging';
-import { getMessagingIfSupported } from '../config/firebase';
+import { getMessagingIfSupported, auth } from '../config/firebase';
 import { apiPost, apiDel } from './api';
 
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
@@ -81,9 +81,22 @@ export async function initPushNotifications({ requestPermission = false } = {}) 
     return { ok: false, reason: 'no-token-returned' };
   }
 
+  // Ensure user is authenticated before attempting backend registration
+  const user = auth.currentUser;
+  if (!user) {
+    return { ok: false, reason: 'not-authenticated' };
+  }
+
   try {
+    const idToken = await user.getIdToken();
+    if (!idToken) {
+      return { ok: false, reason: 'not-authenticated' };
+    }
     await apiPost('/admin/fcm-token', { token });
   } catch (err) {
+    if (err?.statusCode === 401 || err?.response?.status === 401) {
+      return { ok: false, reason: 'unauthorized', error: err };
+    }
     console.error('Push notifications: failed to register token with backend', err);
     return { ok: false, reason: 'backend-registration-failed', error: err };
   }
