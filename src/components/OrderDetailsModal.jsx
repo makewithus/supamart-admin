@@ -169,6 +169,22 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
     }
   };
 
+  const handleUpdateStatus = async (newStatus, successMsg) => {
+    setLoading(true);
+    try {
+      if (order.id && !order.id.startsWith('#')) {
+        await apiPatch(`/orders/${order.id}/status`, { status: newStatus });
+      }
+      toast.success(successMsg || `Order status updated to ${newStatus}`);
+      onSuccess?.();
+      onClose();
+    } catch (e) {
+      toast.error(e.response?.data?.error || `Failed to update status`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCancelOrder = async () => {
     if (!window.confirm('Are you sure you want to cancel this order?')) return;
     setLoading(true);
@@ -271,33 +287,33 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
       {/* Slide-over Drawer Panel */}
       <div className="relative w-full max-w-[500px] sm:max-w-[520px] bg-white h-full shadow-2xl flex flex-col z-[100] overflow-hidden animate-slide-in-right">
         {/* Drawer Header */}
-        <div className="p-5 border-b border-gray-100 flex items-start justify-between bg-white shrink-0">
+        <div className="p-4 sm:p-5 border-b border-gray-100 flex items-start justify-between bg-white shrink-0">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl font-black text-gray-900 tracking-tight">
+              <span className="text-lg sm:text-xl font-black text-gray-900 tracking-tight">
                 {orderNo}
               </span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-600">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold bg-rose-50 text-rose-600">
                 {order.status === 'ORDER_PLACED' || !order.status ? 'New' : order.status}
               </span>
             </div>
-            <p className="text-xs font-semibold text-gray-400 mt-1">
+            <p className="text-[11px] sm:text-xs font-semibold text-gray-400 mt-0.5 sm:mt-1">
               {placedTime} · Instant Delivery
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={handlePrint}
               title="Print Order Receipt"
-              className="p-2 border border-gray-200 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+              className="p-1.5 sm:p-2 border border-gray-200 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors"
             >
               <Printer size={16} strokeWidth={2} />
             </button>
             <button
               onClick={onClose}
               title="Close"
-              className="p-2 border border-gray-200 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+              className="p-1.5 sm:p-2 border border-gray-200 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors"
             >
               <X size={16} strokeWidth={2} />
             </button>
@@ -305,7 +321,7 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
         </div>
 
         {/* Scrollable Content Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-6">
+        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 sm:space-y-6">
           {/* Stepper Progress */}
           <div className="pt-1">
             <div className="grid grid-cols-5 text-center text-xs pb-2 border-b border-gray-100">
@@ -316,7 +332,7 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                 return (
                   <div key={step.id} className="relative flex flex-col items-center">
                     <span
-                      className={`text-[11px] font-bold transition-colors ${
+                      className={`text-[9px] sm:text-[11px] font-bold transition-colors leading-tight ${
                         isActive
                           ? 'text-[#0A7C47]'
                           : isPassed
@@ -497,9 +513,9 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
             </div>
           )}
 
-          {/* Action Buttons: Accept / Cancel */}
+          {/* Action Buttons: Accept / Dispatch / Deliver / Cancel */}
           {activeOrderData.status !== 'DELIVERED' && activeOrderData.status !== 'CANCELLED' && (
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
               {(activeOrderData.status === 'ORDER_PLACED' || activeOrderData.status === 'PLACED' || !activeOrderData.status) ? (
                 <button
                   onClick={handleAcceptOrder}
@@ -509,12 +525,35 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                   <Check size={16} strokeWidth={2.4} />
                   <span>Accept order</span>
                 </button>
-              ) : (
-                <div className="flex-1 py-2.5 px-3 bg-emerald-50 border border-emerald-200/80 text-emerald-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
-                  <CheckCircle2 size={16} className="text-emerald-600" strokeWidth={2.4} />
-                  <span>Order Accepted</span>
-                </div>
-              )}
+              ) : activeOrderData.status === 'ORDER_ACCEPTED' || activeOrderData.status === 'PACKING' ? (
+                <>
+                  <div className="py-2.5 px-3 bg-emerald-50 border border-emerald-200/80 text-emerald-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
+                    <CheckCircle2 size={16} className="text-emerald-600" strokeWidth={2.4} />
+                    <span>Accepted</span>
+                  </div>
+                  <button
+                    onClick={() => handleUpdateStatus('OUT_FOR_DELIVERY', `Order ${orderNo} dispatched - Out for Delivery!`)}
+                    disabled={loading}
+                    className="flex-1 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <span>🚀 Out for delivery</span>
+                  </button>
+                </>
+              ) : activeOrderData.status === 'OUT_FOR_DELIVERY' ? (
+                <>
+                  <div className="py-2.5 px-3 bg-cyan-50 border border-cyan-200/80 text-cyan-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
+                    <span>🚀 On the way</span>
+                  </div>
+                  <button
+                    onClick={() => handleUpdateStatus('DELIVERED', `Order ${orderNo} marked as Delivered!`)}
+                    disabled={loading}
+                    className="flex-1 py-2.5 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <Check size={16} strokeWidth={2.4} />
+                    <span>Mark Delivered</span>
+                  </button>
+                </>
+              ) : null}
 
               <button
                 onClick={handleCancelOrder}

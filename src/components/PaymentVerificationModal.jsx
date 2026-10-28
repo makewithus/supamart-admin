@@ -9,6 +9,7 @@ import productImages from '../utils/productImages';
 const REJECT_REASONS = [
   { value: 'AMOUNT_NOT_RECEIVED', label: 'Amount not received' },
   { value: 'AMOUNT_INCORRECT', label: 'Amount credited was incorrect' },
+  { value: 'INVALID_UTR', label: 'Invalid or unverified UTR reference' },
   { value: 'OTHER', label: 'Other' },
 ];
 
@@ -157,11 +158,11 @@ export default function PaymentVerificationModal({ order, onClose, onSuccess }) 
             </p>
 
             {!showReject ? (
-              <div className="flex gap-3">
-                <Button variant="primary" className="flex-1 !bg-secondary-600 hover:!bg-secondary-700 focus:!ring-secondary-600" onClick={handleConfirm} disabled={loading}>
+              <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3">
+                <Button variant="primary" className="w-full sm:flex-1 !bg-secondary-600 hover:!bg-secondary-700 focus:!ring-secondary-600" onClick={handleConfirm} disabled={loading}>
                   {loading ? <Loader2 size={16} className="animate-spin" /> : <><CheckCircle2 size={16} /> Confirm Payment Received</>}
                 </Button>
-                <Button variant="destructive" className="flex-1" onClick={() => setShowReject(true)} disabled={loading}>
+                <Button variant="destructive" className="w-full sm:flex-1" onClick={() => setShowReject(true)} disabled={loading}>
                   <XCircle size={16} /> Reject Payment
                 </Button>
               </div>
@@ -192,9 +193,9 @@ export default function PaymentVerificationModal({ order, onClose, onSuccess }) 
                     onChange={(e) => setCustomReason(e.target.value)}
                   />
                 )}
-                <div className="flex gap-3 pt-1">
-                  <Button variant="ghost" className="flex-1" onClick={() => setShowReject(false)} disabled={loading}>Cancel</Button>
-                  <Button variant="destructive" className="flex-1" onClick={handleReject} disabled={loading}>
+                <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3 pt-1">
+                  <Button variant="ghost" className="w-full sm:flex-1" onClick={() => setShowReject(false)} disabled={loading}>Cancel</Button>
+                  <Button variant="destructive" className="w-full sm:flex-1" onClick={handleReject} disabled={loading}>
                     {loading ? <Loader2 size={16} className="animate-spin" /> : 'Confirm Rejection'}
                   </Button>
                 </div>

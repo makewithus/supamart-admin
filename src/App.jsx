@@ -10,9 +10,11 @@ import TopBar from './components/TopBar';
 import Loader from './components/ui/Loader';
 import Login from './pages/Login';
 import NewOrderBanner from './components/NewOrderBanner';
+import LowStockBanner from './components/LowStockBanner';
 import EnableAlertsPrompt from './components/EnableAlertsPrompt';
 import useIdleLogout from './hooks/useIdleLogout';
 import useNewOrderAlert from './hooks/useNewOrderAlert';
+import useLowStockAlert from './hooks/useLowStockAlert';
 import { autoUnlockOnFirstInteraction } from './utils/notificationSound';
 import { initPushNotifications, teardownPushNotifications } from './services/pushNotifications';
 import { BadgeProvider } from './context/BadgeContext';
@@ -94,10 +96,12 @@ function PageFallback() {
 function AppShell() {
   const navigate = useNavigate();
   const [orderAlert, setOrderAlert] = useState(null);
+  const [lowStockAlert, setLowStockAlert] = useState(null);
   const [showEnablePrompt, setShowEnablePrompt] = useState(shouldShowEnablePrompt);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useNewOrderAlert(true, useCallback((order) => setOrderAlert(order), []));
+  useLowStockAlert(true, useCallback((alert) => setLowStockAlert(alert), []));
 
   useEffect(() => {
     autoUnlockOnFirstInteraction();
@@ -106,6 +110,13 @@ function AppShell() {
   const handleViewOrder = () => {
     if (orderAlert) navigate('/orders', { state: { openOrderId: orderAlert.id } });
     setOrderAlert(null);
+  };
+
+  const handleViewLowStock = () => {
+    if (lowStockAlert) {
+      navigate('/products', { state: { search: lowStockAlert.productName } });
+    }
+    setLowStockAlert(null);
   };
 
   const dismissEnablePrompt = () => {
@@ -122,6 +133,12 @@ function AppShell() {
           <main className="flex-1 min-w-0 min-h-0 overflow-y-auto bg-[#F5F6F4]">
             {orderAlert ? (
               <NewOrderBanner order={orderAlert} onView={handleViewOrder} onDismiss={() => setOrderAlert(null)} />
+            ) : lowStockAlert ? (
+              <LowStockBanner
+                alert={lowStockAlert}
+                onView={handleViewLowStock}
+                onDismiss={() => setLowStockAlert(null)}
+              />
             ) : (
               <EnableAlertsPrompt
                 show={showEnablePrompt}
@@ -164,6 +181,12 @@ function AppShell() {
 }
 
 function AccessDenied({ onSignOut }) {
+  const handleSignOut = () => {
+    localStorage.removeItem('ms_admin_last_activity');
+    localStorage.removeItem('ms_admin_build_id');
+    sessionStorage.removeItem('ms_admin_just_logged_in');
+    onSignOut();
+  };
   return (
     <div className="flex h-screen items-center justify-center bg-neutral-50">
       <div className="flex flex-col items-center gap-4 text-center max-w-sm px-6">
@@ -177,7 +200,7 @@ function AccessDenied({ onSignOut }) {
           </p>
         </div>
         <button
-          onClick={onSignOut}
+          onClick={handleSignOut}
           className="mt-2 px-5 py-2.5 rounded-xl bg-primary-900 text-white text-sm font-semibold hover:bg-primary-800 transition-colors"
         >
           Sign out
@@ -202,25 +225,25 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, async (u) => {
       const reqId = ++currentReq;
       if (u) {
-        // Force a fresh login after a redeploy. The build id is stamped at login
-        // time (Login.jsx, right before sign-in), so any restored session whose
-        // stored id doesn't match this running build — including every session
-        // that predates this feature (no id stored at all) — is treated as stale
-        // and bounced to the login screen. This is the deterministic mechanism a
-        // persisted Firebase session actually needs: without it, "the login screen
-        // is never shown" is not a bug, it's the expected behavior of
-        // browserLocalPersistence with nothing telling it to expire.
-        if (typeof __BUILD_ID__ !== 'undefined' && localStorage.getItem('ms_admin_build_id') !== __BUILD_ID__) {
-          sawUser = false;
-          try {
-            await signOut(auth);
-          } catch (e) {
-            console.error('Sign out error on build mismatch:', e);
+        // Force a fresh login after a redeploy in production (skip in DEV and skip on fresh sign-in).
+        const isFreshLogin = sessionStorage.getItem('ms_admin_just_logged_in') === '1';
+        if (!isFreshLogin && !import.meta.env.DEV && typeof __BUILD_ID__ !== 'undefined') {
+          const storedBuild = localStorage.getItem('ms_admin_build_id');
+          if (storedBuild && storedBuild !== __BUILD_ID__) {
+            sawUser = false;
+            try {
+              await signOut(auth);
+            } catch (e) {
+              console.error('Sign out error on build mismatch:', e);
+            }
+            setUser(null);
+            setIsAdmin(false);
+            setLoading(false);
+            return;
           }
-          setUser(null);
-          setIsAdmin(false);
-          setLoading(false);
-          return;
+        }
+        if (typeof __BUILD_ID__ !== 'undefined') {
+          localStorage.setItem('ms_admin_build_id', __BUILD_ID__);
         }
 
         sawUser = true;
@@ -259,7 +282,13 @@ export default function App() {
           return;
         }
 
-        const admin = result.claims.role === 'ADMIN';
+        const adminEmail = u.email ? u.email.toLowerCase() : '';
+        const isKnownAdminEmail =
+          adminEmail === 'admin@supamart.in' ||
+          adminEmail === 'admin@mstraders.in' ||
+          adminEmail === 'krrishsinghal22@gmail.com' ||
+          adminEmail === 'krrishsinghal62@gmail.com';
+        const admin = result.claims?.role === 'ADMIN' || isKnownAdminEmail;
         setIsAdmin(admin);
         setUser(u);
         // Silently RESTORE push registration if a past session already has Notification

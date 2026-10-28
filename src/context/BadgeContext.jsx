@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { apiGet } from '../services/api';
 
 const BadgeContext = createContext({
   counts: {
@@ -13,7 +14,10 @@ const BadgeContext = createContext({
   dashboardLowStock: {
     count: 0,
     names: '',
+    items: [],
   },
+  recentAlerts: [],
+  refreshLowStock: () => {},
 });
 
 export function BadgeProvider({ children }) {
@@ -28,7 +32,24 @@ export function BadgeProvider({ children }) {
   const [dashboardLowStock, setDashboardLowStock] = useState({
     count: 0,
     names: '',
+    items: [],
   });
+
+  const [recentAlerts, setRecentAlerts] = useState([]);
+
+  const fetchLowStock = useCallback(async () => {
+    try {
+      const res = await apiGet('/admin/low-stock?threshold=10');
+      const items = res?.items || [];
+      setCounts((prev) => ({ ...prev, products: items.length }));
+      const names = items.slice(0, 3).map((p) => p.name?.toLowerCase()).join(', ');
+      setDashboardLowStock({
+        count: items.length,
+        names,
+        items,
+      });
+    } catch (_) {}
+  }, []);
 
   useEffect(() => {
     try {
@@ -80,42 +101,39 @@ export function BadgeProvider({ children }) {
         () => {}
       );
 
-      // 5. Products low-stock (single listener shared across Navbar, TopBar, and Dashboard)
-      const unsubProducts = onSnapshot(
-        collection(db, 'products'),
+      // 5. Real-time operational adminAlerts listener (for instant low stock & stockout alerts)
+      const unsubAlerts = onSnapshot(
+        query(
+          collection(db, 'adminAlerts'),
+          orderBy('createdAt', 'desc'),
+          limit(15)
+        ),
         (snap) => {
-          const docs = snap.docs.map((d) => d.data());
-          // Navbar & TopBar badge count (stock <= 5)
-          const low5 = docs.filter((p) => {
-            return (p.stock !== undefined && p.stock <= 5) || (p.variants && p.variants.some((v) => v.stock <= 5));
-          });
-          setCounts((prev) => ({ ...prev, products: low5.length }));
-
-          // Dashboard card count (stock <= 10) and names
-          const low10 = docs.filter((p) => {
-            return (p.stock !== undefined && p.stock <= 10) || (p.variants && p.variants.some((v) => v.stock <= 10));
-          });
-          const names = low10.slice(0, 3).map((p) => p.name?.toLowerCase()).join(', ');
-          setDashboardLowStock({
-            count: low10.length,
-            names,
-          });
+          const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setRecentAlerts(list);
+          // Whenever an alert is created or modified, immediately fetch fresh inventory counts
+          fetchLowStock();
         },
         () => {}
       );
+
+      // Initial low stock fetch + periodic background sync (30s interval)
+      fetchLowStock();
+      const lowStockTimer = setInterval(fetchLowStock, 30 * 1000);
 
       return () => {
         unsubOrders();
         unsubPayments();
         unsubRefunds();
         unsubIssues();
-        unsubProducts();
+        unsubAlerts();
+        clearInterval(lowStockTimer);
       };
     } catch (_) {}
-  }, []);
+  }, [fetchLowStock]);
 
   return (
-    <BadgeContext.Provider value={{ counts, dashboardLowStock }}>
+    <BadgeContext.Provider value={{ counts, dashboardLowStock, recentAlerts, refreshLowStock: fetchLowStock }}>
       {children}
     </BadgeContext.Provider>
   );

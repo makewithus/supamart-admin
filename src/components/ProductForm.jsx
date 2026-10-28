@@ -20,7 +20,7 @@ export default function ProductForm({ product, categories = [], brands = [], onS
   });
 
   const [packSizes, setPackSizes] = useState([
-    { id: 'pack-1', size: 'Standard Pack', mrp: '10', selling: '40', stock: '100' },
+    { id: 'pack-1', size: 'Standard Pack', mrp: '40', selling: '40', stock: '100' },
   ]);
 
   const [existingImages, setExistingImages] = useState([]);
@@ -45,7 +45,7 @@ export default function ProductForm({ product, categories = [], brands = [], onS
           product.variants.map((v, i) => ({
             id: v.id || `pack-${i + 1}`,
             size: v.label || product.unit || 'Standard Pack',
-            mrp: String(v.price || v.mrp || 10),
+            mrp: String(v.mrp || v.price || 10),
             selling: String(v.offerPrice || v.sellingPrice || v.price || 10),
             stock: String(v.stock ?? 100),
           }))
@@ -79,7 +79,7 @@ export default function ProductForm({ product, categories = [], brands = [], onS
         id: `pack-${Date.now()}`,
         size: '500 g',
         mrp: '50',
-        selling: '45',
+        selling: '50',
         stock: '100',
       },
     ]);
@@ -87,7 +87,14 @@ export default function ProductForm({ product, categories = [], brands = [], onS
 
   const handleUpdatePackSize = (index, field, value) => {
     setPackSizes((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, [field]: value } : item))
+      prev.map((item, i) => {
+        if (i !== index) return item;
+        const updated = { ...item, [field]: value };
+        if (field === 'selling' && (item.mrp === item.selling || !item.mrp)) {
+          updated.mrp = value;
+        }
+        return updated;
+      })
     );
   };
 
@@ -204,7 +211,7 @@ export default function ProductForm({ product, categories = [], brands = [], onS
       {/* Slide-over Right Drawer */}
       <div className="relative w-full max-w-[620px] bg-white h-full shadow-2xl flex flex-col z-50 overflow-hidden animate-slide-in-right">
         {/* Header - permanently fixed at top of drawer */}
-        <div className="flex items-center justify-between p-5 sm:p-6 border-b border-gray-100 bg-white shrink-0">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-100 bg-white shrink-0">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -231,7 +238,7 @@ export default function ProductForm({ product, categories = [], brands = [], onS
 
         {/* Form Body - scrollable with pinned footer */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto flex flex-col min-h-0">
-          <div className="p-6 space-y-6 flex-1">
+          <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 flex-1">
             {/* Photos */}
             <div>
             <label className="block text-xs font-medium text-gray-500 mb-2">
@@ -345,91 +352,93 @@ export default function ProductForm({ product, categories = [], brands = [], onS
             <label className="block text-xs font-bold text-gray-700 mb-1.5">
               Pack sizes
             </label>
-            <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-100">
-              <div className="grid grid-cols-12 bg-gray-50/80 px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                <div className="col-span-4">SIZE</div>
-                <div className="col-span-2 text-center">MRP ₹</div>
-                <div className="col-span-3 text-center">SELLING ₹</div>
-                <div className="col-span-2 text-center">STOCK</div>
-                <div className="col-span-1"></div>
-              </div>
-              <div className="divide-y divide-gray-100 p-2 space-y-2">
-                {packSizes.map((pack, i) => {
-                  const mrpVal = Number(pack.mrp) || 0;
-                  const sellVal = Number(pack.selling) || 0;
-                  const hasPriceError = mrpVal > 0 && sellVal > mrpVal;
-                  const hasStandardPackWarning = pack.size.toLowerCase().includes('standard pack');
+            <div className="border border-gray-200 rounded-xl overflow-x-auto divide-y divide-gray-100">
+              <div className="min-w-[420px]">
+                <div className="grid grid-cols-12 bg-gray-50/80 px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  <div className="col-span-4">SIZE</div>
+                  <div className="col-span-2 text-center">MRP ₹</div>
+                  <div className="col-span-3 text-center">SELLING ₹</div>
+                  <div className="col-span-2 text-center">STOCK</div>
+                  <div className="col-span-1"></div>
+                </div>
+                <div className="divide-y divide-gray-100 p-2 space-y-2">
+                  {packSizes.map((pack, i) => {
+                    const mrpVal = Number(pack.mrp) || 0;
+                    const sellVal = Number(pack.selling) || 0;
+                    const hasPriceError = mrpVal > 0 && sellVal > mrpVal;
+                    const hasStandardPackWarning = pack.size.toLowerCase().includes('standard pack');
 
-                  return (
-                    <div key={pack.id || i} className="space-y-1.5 pt-1">
-                      <div className="grid grid-cols-12 gap-2 items-center">
-                        <div className="col-span-4">
-                          <input
-                            type="text"
-                            value={pack.size}
-                            onChange={(e) => handleUpdatePackSize(i, 'size', e.target.value)}
-                            placeholder="e.g. 500 g"
-                            className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-[#0E6C3B]"
-                          />
+                    return (
+                      <div key={pack.id || i} className="space-y-1.5 pt-1">
+                        <div className="grid grid-cols-12 gap-2 items-center">
+                          <div className="col-span-4">
+                            <input
+                              type="text"
+                              value={pack.size}
+                              onChange={(e) => handleUpdatePackSize(i, 'size', e.target.value)}
+                              placeholder="e.g. 500 g"
+                              className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:border-[#0E6C3B]"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <input
+                              type="number"
+                              value={pack.mrp}
+                              onChange={(e) => handleUpdatePackSize(i, 'mrp', e.target.value)}
+                              placeholder="10"
+                              className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-center text-gray-900 focus:outline-none focus:border-[#0E6C3B]"
+                            />
+                          </div>
+                          <div className="col-span-3">
+                            <input
+                              type="number"
+                              value={pack.selling}
+                              onChange={(e) => handleUpdatePackSize(i, 'selling', e.target.value)}
+                              placeholder="40"
+                              className={`w-full rounded-xl px-2.5 py-1.5 text-xs text-center text-gray-900 focus:outline-none ${
+                                hasPriceError
+                                  ? 'border-2 border-red-500'
+                                  : 'border border-gray-200 focus:border-[#0E6C3B]'
+                              }`}
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <input
+                              type="number"
+                              value={pack.stock}
+                              onChange={(e) => handleUpdatePackSize(i, 'stock', e.target.value)}
+                              placeholder="100"
+                              className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-center text-gray-900 focus:outline-none focus:border-[#0E6C3B]"
+                            />
+                          </div>
+                          <div className="col-span-1 text-center">
+                            {packSizes.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemovePackSize(i)}
+                                className="text-gray-400 hover:text-red-500 p-1"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="col-span-2">
-                          <input
-                            type="number"
-                            value={pack.mrp}
-                            onChange={(e) => handleUpdatePackSize(i, 'mrp', e.target.value)}
-                            placeholder="10"
-                            className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-center text-gray-900 focus:outline-none focus:border-[#0E6C3B]"
-                          />
-                        </div>
-                        <div className="col-span-3">
-                          <input
-                            type="number"
-                            value={pack.selling}
-                            onChange={(e) => handleUpdatePackSize(i, 'selling', e.target.value)}
-                            placeholder="40"
-                            className={`w-full rounded-xl px-2.5 py-1.5 text-xs text-center text-gray-900 focus:outline-none ${
-                              hasPriceError
-                                ? 'border-2 border-red-500'
-                                : 'border border-gray-200 focus:border-[#0E6C3B]'
-                            }`}
-                          />
-                        </div>
-                        <div className="col-span-2">
-                          <input
-                            type="number"
-                            value={pack.stock}
-                            onChange={(e) => handleUpdatePackSize(i, 'stock', e.target.value)}
-                            placeholder="100"
-                            className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-center text-gray-900 focus:outline-none focus:border-[#0E6C3B]"
-                          />
-                        </div>
-                        <div className="col-span-1 text-center">
-                          {packSizes.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemovePackSize(i)}
-                              className="text-gray-400 hover:text-red-500 p-1"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          )}
-                        </div>
+
+                        {/* Warnings / Errors */}
+                        {hasPriceError && (
+                          <p className="text-[11px] font-medium text-[#E03137]">
+                            Selling price ₹{pack.selling} is above the MRP of ₹{pack.mrp}. You can't sell above MRP.
+                          </p>
+                        )}
+                        {hasStandardPackWarning && (
+                          <p className="text-[11px] font-medium text-[#E03137]">
+                            "Standard Pack" doesn't tell customers the size. Enter it, like 4 × 100 g.
+                          </p>
+                        )}
                       </div>
-
-                      {/* Warnings / Errors */}
-                      {hasPriceError && (
-                        <p className="text-[11px] font-medium text-[#E03137]">
-                          Selling price ₹{pack.selling} is above the MRP of ₹{pack.mrp}. You can't sell above MRP.
-                        </p>
-                      )}
-                      {hasStandardPackWarning && (
-                        <p className="text-[11px] font-medium text-[#E03137]">
-                          "Standard Pack" doesn't tell customers the size. Enter it, like 4 × 100 g.
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -505,18 +514,18 @@ export default function ProductForm({ product, categories = [], brands = [], onS
           </div>
 
           {/* Action buttons - pinned at the bottom of the drawer */}
-          <div className="sticky bottom-0 bg-white p-5 sm:p-6 border-t border-gray-100 flex items-center justify-end gap-3 shrink-0 shadow-xs">
+          <div className="sticky bottom-0 bg-white p-4 sm:p-6 border-t border-gray-100 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2.5 sm:gap-3 shrink-0 shadow-xs">
             <button
               type="button"
               onClick={onCancel}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-bold text-xs sm:text-sm hover:bg-gray-50 transition-all shadow-2xs cursor-pointer"
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-bold text-xs sm:text-sm hover:bg-gray-50 transition-all shadow-2xs cursor-pointer text-center"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-2.5 rounded-xl bg-[#0E6C3B] hover:bg-[#09522C] text-white font-bold text-xs sm:text-sm shadow-2xs transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-[#0E6C3B] hover:bg-[#09522C] text-white font-bold text-xs sm:text-sm shadow-2xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 text-center"
             >
               {loading && <Loader2 size={16} className="animate-spin" />}
               {isEdit ? 'Save product' : 'Add product'}

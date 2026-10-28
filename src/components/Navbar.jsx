@@ -201,7 +201,12 @@ export default function Navbar({ mobileOpen = false, onCloseMobile = () => {} })
         {/* Subtle Sign out trigger */}
         <div className="p-3 border-t border-gray-100 shrink-0">
           <button
-            onClick={() => auth.signOut()}
+            onClick={() => {
+              localStorage.removeItem('ms_admin_last_activity');
+              localStorage.removeItem('ms_admin_build_id');
+              sessionStorage.removeItem('ms_admin_just_logged_in');
+              auth.signOut();
+            }}
             className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
           >
             <LogOut size={14} strokeWidth={1.75} />

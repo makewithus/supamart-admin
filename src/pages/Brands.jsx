@@ -3,7 +3,7 @@ import { Plus, Search, Sparkles } from 'lucide-react';
 import { db } from '../config/firebase';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import BrandForm from '../components/BrandForm';
-import { apiDel } from '../services/api';
+import { apiDel, apiGet } from '../services/api';
 import toast from 'react-hot-toast';
 import brandLogos from '../utils/brandLogos';
 import productImages from '../utils/productImages';
@@ -62,16 +62,19 @@ export default function Brands() {
     return () => unsub();
   }, []);
 
-  // Subscribe to products to compute real product counts and resolve system product images
+  // Fetch products from cached search API once on mount to compute product counts & brand images
   useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, 'products'),
-      (snap) => {
-        setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      },
-      () => {}
-    );
-    return () => unsub();
+    let active = true;
+    apiGet('/products/search?q=')
+      .then((res) => {
+        if (!active) return;
+        const items = res?.items || [];
+        setProducts(items);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Compute product counts and map first available product image per brand
@@ -124,7 +127,7 @@ export default function Brands() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 w-full animate-fade-in">
+    <div className="p-3.5 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 w-full animate-fade-in">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -133,22 +136,22 @@ export default function Brands() {
             {brands.length} brands · click any brand to edit details or select product images
           </p>
         </div>
-        <div className="flex items-center gap-3 self-start sm:self-auto">
+        <div className="flex flex-col xs:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
           {/* Search Input */}
-          <div className="relative">
+          <div className="relative flex-1 sm:w-60">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
               placeholder="Search brands..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-48 sm:w-60 pl-9 pr-3.5 py-2 text-sm text-gray-800 bg-white border border-gray-200 rounded-lg placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0a7c47] focus:border-[#0a7c47] shadow-2xs"
+              className="w-full pl-9 pr-3.5 py-2 text-sm text-gray-800 bg-white border border-gray-200 rounded-lg placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-[#0a7c47] focus:border-[#0a7c47] shadow-2xs"
             />
           </div>
           {/* Add brand button */}
           <button
             onClick={handleAddClick}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#0a7c47] hover:bg-[#086338] text-white text-sm font-semibold rounded-lg transition-colors shadow-2xs shrink-0 cursor-pointer"
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#0a7c47] hover:bg-[#086338] text-white text-sm font-semibold rounded-lg transition-colors shadow-2xs shrink-0 cursor-pointer"
           >
             <Plus size={16} strokeWidth={2.5} />
             <span>Add brand</span>

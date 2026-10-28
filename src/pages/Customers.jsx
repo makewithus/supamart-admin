@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../config/firebase';
-import { collection, query, orderBy, where, getDocs, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, where, getDocs, onSnapshot, limit } from 'firebase/firestore';
 import Modal from '../components/ui/Modal';
 import toast from 'react-hot-toast';
 import { ShoppingBag } from 'lucide-react';
@@ -106,9 +106,9 @@ export default function Customers() {
   const [activeTab, setActiveTab] = useState('all');
   const [selected, setSelected] = useState(null);
 
-  // Subscribe to users
+  // Subscribe to recent users
   useEffect(() => {
-    const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(50));
     const unsub = onSnapshot(q, (snap) => {
       setCustomers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setLoading(false);
@@ -120,12 +120,18 @@ export default function Customers() {
     return () => unsub();
   }, []);
 
-  // Subscribe to orders to compute last order time and lifetime spend accurately
+  // Fetch recent orders once to compute active stats
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'orders'), (snap) => {
-      setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    }, () => {});
-    return () => unsub();
+    let active = true;
+    getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(30)))
+      .then((snap) => {
+        if (!active) return;
+        setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Compute customer stats
@@ -216,7 +222,7 @@ export default function Customers() {
   };
 
   return (
-    <div className="p-6 md:p-8 space-y-6 w-full">
+    <div className="p-3.5 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 w-full animate-fade-in">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -227,19 +233,19 @@ export default function Customers() {
         </div>
         <button
           onClick={handleExportCSV}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg transition-colors shadow-2xs self-start sm:self-auto"
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg transition-colors shadow-2xs self-start sm:self-auto cursor-pointer"
         >
-          Export
+          Export CSV
         </button>
       </div>
 
       {/* Card Table Container */}
       <div className="bg-white rounded-xl border border-gray-200/90 shadow-2xs overflow-hidden">
         {/* Tabs Bar */}
-        <div className="border-b border-gray-200 px-6 pt-3 flex items-center gap-8 overflow-x-auto text-sm">
+        <div className="border-b border-gray-200 px-4 sm:px-6 pt-3 flex items-center gap-4 sm:gap-8 overflow-x-auto text-xs sm:text-sm no-scrollbar">
           <button
             onClick={() => setActiveTab('all')}
-            className={`pb-3 font-semibold transition-colors whitespace-nowrap ${
+            className={`pb-3 font-semibold transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'all'
                 ? 'text-gray-900 border-b-2 border-gray-900'
                 : 'text-gray-500 hover:text-gray-700'
@@ -250,7 +256,7 @@ export default function Customers() {
 
           <button
             onClick={() => setActiveTab('ordered')}
-            className={`pb-3 font-semibold transition-colors whitespace-nowrap ${
+            className={`pb-3 font-semibold transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'ordered'
                 ? 'text-gray-900 border-b-2 border-gray-900'
                 : 'text-gray-500 hover:text-gray-700'
@@ -261,7 +267,7 @@ export default function Customers() {
 
           <button
             onClick={() => setActiveTab('msclub')}
-            className={`pb-3 font-semibold transition-colors whitespace-nowrap ${
+            className={`pb-3 font-semibold transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'msclub'
                 ? 'text-gray-900 border-b-2 border-gray-900'
                 : 'text-gray-500 hover:text-gray-700'
@@ -272,7 +278,7 @@ export default function Customers() {
 
           <button
             onClick={() => setActiveTab('deletion')}
-            className={`pb-3 font-semibold transition-colors whitespace-nowrap ${
+            className={`pb-3 font-semibold transition-colors whitespace-nowrap cursor-pointer ${
               activeTab === 'deletion'
                 ? 'text-gray-900 border-b-2 border-gray-900'
                 : 'text-gray-500 hover:text-gray-700'
@@ -282,8 +288,8 @@ export default function Customers() {
           </button>
         </div>
 
-        {/* Customers Table */}
-        <div className="overflow-x-auto">
+        {/* Desktop Customers Table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-sm border-collapse">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/50">
@@ -388,6 +394,87 @@ export default function Customers() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Customer Cards (< md screens) */}
+        <div className="block md:hidden divide-y divide-gray-100">
+          {filteredCustomers.length === 0 ? (
+            <div className="p-8 text-center text-gray-400 text-sm font-semibold">
+              No customers matching this category.
+            </div>
+          ) : (
+            filteredCustomers.map((c) => {
+              const stats = customerStatsMap[c.id] || {};
+              const orderCount = c.totalOrders ?? stats.count ?? 0;
+              const lifetimeSpend = Math.round(c.lifetimeSpending ?? stats.spend ?? 0);
+              const initial = (c.name || 'C')[0]?.toUpperCase();
+              const maskedPhone = maskPhone(c.mobile);
+              const lastOrderTime = stats.lastOrderAt ? formatRelativeTime(stats.lastOrderAt) : (c.lastOrderTime || 'Never');
+              const joinedDate = c.createdAt ? formatJoinedDate(c.createdAt) : (c.joinedDate || '—');
+
+              const isMSClub = !!c.isMSClubMember;
+              const isTest = c.email?.includes('test') || c.name?.toLowerCase().includes('test');
+              const isDeletion = !!c.deletionRequested || !!c.scheduledDeletionAt;
+
+              return (
+                <div
+                  key={c.id}
+                  onClick={() => setSelected(c)}
+                  className="p-4 space-y-3 cursor-pointer hover:bg-gray-50/70 transition-colors active:bg-gray-100/70"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-full bg-gray-100 text-gray-700 font-bold text-xs flex items-center justify-center shrink-0">
+                        {initial}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-gray-900 text-sm truncate">{c.name || 'Customer'}</p>
+                        <p className="text-xs text-gray-400 truncate">{c.email || '—'}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      {isMSClub && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#fef3c7] text-[#92400e]">
+                          MS Club
+                        </span>
+                      )}
+                      {isDeletion && !isMSClub && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#fee2e2] text-[#991b1b]">
+                          Deletion
+                        </span>
+                      )}
+                      {isTest && !isMSClub && !isDeletion && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#f3f4f6] text-[#4b5563]">
+                          Test
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 py-2 px-3 bg-gray-50 rounded-xl text-center">
+                    <div>
+                      <p className="text-xs font-bold text-gray-900">{orderCount}</p>
+                      <p className="text-[10px] text-gray-500 font-medium">Orders</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-gray-900">₹{lifetimeSpend.toLocaleString('en-IN')}</p>
+                      <p className="text-[10px] text-gray-500 font-medium">Lifetime</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-gray-900 truncate">{lastOrderTime}</p>
+                      <p className="text-[10px] text-gray-500 font-medium">Last order</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-gray-500 font-mono">
+                    <span>Phone: {maskedPhone}</span>
+                    <span>Joined {joinedDate}</span>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 

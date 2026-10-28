@@ -213,7 +213,7 @@ export default function BrandForm({
       {/* Slide-over Right Drawer */}
       <div className="relative w-full max-w-[580px] bg-white h-full shadow-2xl flex flex-col z-50 overflow-hidden animate-slide-in-right">
         {/* Fixed Header */}
-        <div className="flex items-center justify-between p-5 sm:p-6 border-b border-gray-100 bg-white shrink-0">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-100 bg-white shrink-0">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -240,7 +240,7 @@ export default function BrandForm({
 
         {/* Scrollable Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto flex flex-col min-h-0">
-          <div className="p-6 space-y-6 flex-1">
+          <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 flex-1">
             {/* Brand Logo & Product Image Section */}
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1.5">
@@ -508,19 +508,19 @@ export default function BrandForm({
           </div>
 
           {/* Fixed Footer */}
-          <div className="p-5 border-t border-gray-100 bg-white shrink-0 flex items-center justify-end gap-3 shadow-sm">
+          <div className="p-4 sm:p-5 border-t border-gray-100 bg-white shrink-0 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2.5 sm:gap-3 shadow-sm">
             <button
               type="button"
               onClick={onCancel}
               disabled={loading}
-              className="px-4 py-2.5 rounded-xl border border-gray-200 text-xs sm:text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-gray-200 text-xs sm:text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer text-center"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2.5 rounded-xl bg-[#0a7c47] hover:bg-[#086338] text-white text-xs sm:text-sm font-bold transition-colors shadow-2xs flex items-center gap-2 cursor-pointer disabled:opacity-60"
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#0a7c47] hover:bg-[#086338] text-white text-xs sm:text-sm font-bold transition-colors shadow-2xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 text-center"
             >
               {loading && <Loader2 size={16} className="animate-spin" />}
               <span>{isEdit ? 'Save brand' : 'Create brand'}</span>

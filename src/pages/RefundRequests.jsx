@@ -96,7 +96,7 @@ export default function RefundRequests() {
   const allCount = refunds.length;
 
   return (
-    <div className="p-6 lg:p-8 w-full space-y-6">
+    <div className="p-3.5 sm:p-6 lg:p-8 w-full space-y-4 sm:space-y-6 animate-fade-in">
       {/* Title & Subtitle */}
       <div>
         <h1 className="text-2xl lg:text-[28px] font-extrabold text-gray-900 tracking-tight leading-none">
@@ -110,10 +110,10 @@ export default function RefundRequests() {
       {/* Main Table Card */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-2xs overflow-hidden">
         {/* Tabs Bar */}
-        <div className="flex items-center gap-8 px-6 pt-4 border-b border-gray-100 overflow-x-auto text-sm">
+        <div className="flex items-center gap-4 sm:gap-8 px-4 sm:px-6 pt-3 sm:pt-4 border-b border-gray-100 overflow-x-auto text-xs sm:text-sm no-scrollbar">
           <button
             onClick={() => setActiveTab('WAITING')}
-            className={`pb-3 font-bold transition-all relative ${
+            className={`pb-3 font-bold transition-all relative whitespace-nowrap cursor-pointer ${
               activeTab === 'WAITING'
                 ? 'text-gray-900 border-b-2 border-[#0E6C3B]'
                 : 'text-gray-500 hover:text-gray-800'
@@ -123,7 +123,7 @@ export default function RefundRequests() {
           </button>
           <button
             onClick={() => setActiveTab('REFUNDED')}
-            className={`pb-3 font-semibold transition-all relative ${
+            className={`pb-3 font-semibold transition-all relative whitespace-nowrap cursor-pointer ${
               activeTab === 'REFUNDED'
                 ? 'text-gray-900 border-b-2 border-[#0E6C3B]'
                 : 'text-gray-500 hover:text-gray-800'
@@ -133,7 +133,7 @@ export default function RefundRequests() {
           </button>
           <button
             onClick={() => setActiveTab('REJECTED')}
-            className={`pb-3 font-semibold transition-all relative ${
+            className={`pb-3 font-semibold transition-all relative whitespace-nowrap cursor-pointer ${
               activeTab === 'REJECTED'
                 ? 'text-gray-900 border-b-2 border-[#0E6C3B]'
                 : 'text-gray-500 hover:text-gray-800'
@@ -143,7 +143,7 @@ export default function RefundRequests() {
           </button>
           <button
             onClick={() => setActiveTab('ALL')}
-            className={`pb-3 font-semibold transition-all relative ${
+            className={`pb-3 font-semibold transition-all relative whitespace-nowrap cursor-pointer ${
               activeTab === 'ALL'
                 ? 'text-gray-900 border-b-2 border-[#0E6C3B]'
                 : 'text-gray-500 hover:text-gray-800'
@@ -153,8 +153,8 @@ export default function RefundRequests() {
           </button>
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-gray-100 bg-white">
@@ -215,7 +215,7 @@ export default function RefundRequests() {
 
                       {/* Amount Column */}
                       <td className="px-6 py-4 font-bold text-gray-900 text-sm whitespace-nowrap">
-                        ₹{r.amount}
+                        ₹{r.totalRefund ?? r.amount ?? r.orderTotal ?? r.refundAmount ?? 0}
                       </td>
 
                       {/* Refund To (UPI) */}
@@ -258,6 +258,83 @@ export default function RefundRequests() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Refund Cards (< md screens) */}
+        <div className="block md:hidden divide-y divide-gray-100">
+          {displayedRefunds.length === 0 ? (
+            <div className="p-8 text-center text-gray-400 text-sm font-semibold">
+              No refund requests found in this view.
+            </div>
+          ) : (
+            displayedRefunds.map((r) => {
+              const reqNum = r.requestNo || `RF-${String(r.orderNo || r.id.slice(-4)).padStart(4, '0')}`;
+              const isPending = (r.status || 'PENDING_APPROVAL') === 'PENDING_APPROVAL';
+              const reasonTitle = r.reasonTitle || r.reason || 'Refund Request';
+              const reasonSub = r.reasonSub || (r.items ? `${r.items[0]?.name || 'Item'} · details attached` : 'Customer requested refund');
+              const refundToUpi = r.refundTo || r.upiId || r.userUpiId || 'UPI / Original Method';
+              const amount = r.totalRefund ?? r.amount ?? r.orderTotal ?? r.refundAmount ?? 0;
+
+              return (
+                <div
+                  key={r.id}
+                  onClick={() => setSelectedRefund(r)}
+                  className="p-4 space-y-3 cursor-pointer hover:bg-gray-50/70 transition-colors active:bg-gray-100/70"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-gray-900">{reqNum}</span>
+                        <span className="text-gray-400 text-xs">· Order #{r.orderNo}</span>
+                      </div>
+                      <p className="font-bold text-sm text-gray-900 mt-0.5">{r.userName || r.userPhone || 'Customer'}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-extrabold text-sm text-gray-900">₹{amount}</span>
+                      <p className="text-[10px] text-gray-400 font-mono mt-0.5">{refundToUpi}</p>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-gray-50 rounded-xl text-xs">
+                    <p className="font-bold text-gray-900">{reasonTitle}</p>
+                    <p className="text-gray-500 text-[11px] mt-0.5">{reasonSub}</p>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1" onClick={(e) => e.stopPropagation()}>
+                    <span className="text-[11px] text-gray-400">
+                      Tap card to view items & proof
+                    </span>
+                    {isPending ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenReject(r, e)}
+                          className="px-3 py-1.5 rounded-lg border border-red-200 text-red-600 bg-white font-bold text-xs"
+                        >
+                          Reject
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleApprove(r, e)}
+                          className="px-3.5 py-1.5 rounded-lg bg-[#0E6C3B] text-white font-bold text-xs shadow-2xs"
+                        >
+                          Approve
+                        </button>
+                      </div>
+                    ) : r.status === 'REFUND_GRANTED' || r.status === 'REFUNDED' ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-[#0E6C3B] bg-[#E7F4EB] px-2.5 py-1 rounded-md">
+                        <CheckCircle2 size={13} /> Refunded
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-[#E03137] bg-[#FDF2F2] px-2.5 py-1 rounded-md">
+                        <XCircle size={13} /> Rejected
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -317,7 +394,9 @@ export default function RefundRequests() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Amount:</span>
-                <span className="font-bold text-emerald-800 text-sm">₹{selectedRefund.amount}</span>
+                <span className="font-bold text-emerald-800 text-sm">
+                  ₹{selectedRefund.totalRefund ?? selectedRefund.amount ?? selectedRefund.orderTotal ?? selectedRefund.refundAmount ?? 0}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Refund Destination UPI:</span>

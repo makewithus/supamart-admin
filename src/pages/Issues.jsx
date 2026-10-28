@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../config/firebase';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { apiGet, apiPatch } from '../services/api';
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { apiGet, apiPatch, apiPost } from '../services/api';
 import toast from 'react-hot-toast';
 import { Phone, CheckCircle2, XCircle, Send, RefreshCw } from 'lucide-react';
 
@@ -43,7 +43,7 @@ export default function Issues() {
 
     let unsub = () => {};
     try {
-      const q = query(collection(db, 'issues'), orderBy('createdAt', 'desc'));
+      const q = query(collection(db, 'issues'), orderBy('createdAt', 'desc'), limit(50));
       unsub = onSnapshot(
         q,
         (snap) => {
@@ -64,11 +64,8 @@ export default function Issues() {
       setLoading(false);
     }
 
-    const interval = setInterval(fetchIssuesFromApi, 10000);
-
     return () => {
       unsub();
-      clearInterval(interval);
     };
   }, [fetchIssuesFromApi, mergeIssues]);
 
@@ -156,13 +153,34 @@ export default function Issues() {
     }
   };
 
-  const handleSendReply = () => {
+  const handleSendReply = async () => {
     if (!replyText.trim() || !activeIssue) return;
-    toast.success(`Reply sent to ${activeIssue.customerName}: "${replyText}"`);
+    setActionLoading(true);
+    try {
+      await apiPost(`/issues/${activeIssue.id}/reply`, { reply: replyText.trim() });
+      toast.success(`Reply sent to ${activeIssue.customerName || 'customer'}`);
+      setReplyText('');
+      fetchIssuesFromApi();
+    } catch (err) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to send reply');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const detailRef = React.useRef(null);
+
+  const handleSelectIssue = (id) => {
+    setSelectedIssueId(id);
+    if (window.innerWidth < 1024 && detailRef.current) {
+      setTimeout(() => {
+        detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
+    }
   };
 
   return (
-    <div className="p-6 lg:p-8 w-full space-y-6">
+    <div className="p-3.5 sm:p-6 lg:p-8 w-full space-y-4 sm:space-y-6 animate-fade-in">
       {/* Title & Filter Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -173,11 +191,11 @@ export default function Issues() {
             Missing, damaged, delivery disputes or wrong items reported by customers
           </p>
         </div>
-        <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+        <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl overflow-x-auto no-scrollbar">
           <button
             type="button"
             onClick={() => setStatusFilter('ALL')}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
               statusFilter === 'ALL'
                 ? 'bg-white text-gray-900 shadow-2xs'
                 : 'text-gray-600 hover:text-gray-900'
@@ -188,7 +206,7 @@ export default function Issues() {
           <button
             type="button"
             onClick={() => setStatusFilter('OPEN')}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
               statusFilter === 'OPEN'
                 ? 'bg-white text-[#E03137] shadow-2xs'
                 : 'text-gray-600 hover:text-gray-900'
@@ -199,7 +217,7 @@ export default function Issues() {
           <button
             type="button"
             onClick={() => setStatusFilter('RESOLVED')}
-            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
               statusFilter === 'RESOLVED'
                 ? 'bg-white text-emerald-700 shadow-2xs'
                 : 'text-gray-600 hover:text-gray-900'
@@ -238,7 +256,7 @@ export default function Issues() {
               return (
                 <div
                   key={issue.id}
-                  onClick={() => setSelectedIssueId(issue.id)}
+                  onClick={() => handleSelectIssue(issue.id)}
                   className={`p-4 rounded-2xl bg-white border transition-all cursor-pointer relative ${
                     isSelected
                       ? 'border-gray-200 shadow-md border-l-4 border-l-[#0E6C3B]'
@@ -282,7 +300,7 @@ export default function Issues() {
 
           {/* Right Column: Selected Issue Detail */}
           {activeIssue && (
-            <div className="lg:col-span-7 bg-white rounded-2xl p-6 border border-gray-100 shadow-2xs space-y-6">
+            <div ref={detailRef} className="lg:col-span-7 bg-white rounded-2xl p-4 sm:p-6 border border-gray-100 shadow-2xs space-y-6">
               {/* Header */}
               <div className="flex items-center justify-between">
                 <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-[#FDF2F2] text-[#E03137]">
@@ -297,7 +315,7 @@ export default function Issues() {
                       toast('No phone number on record for this customer');
                     }
                   }}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs shadow-2xs transition-all"
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs shadow-2xs transition-all cursor-pointer"
                 >
                   <Phone size={13} />
                   Call customer
@@ -325,7 +343,7 @@ export default function Issues() {
                   <p className="text-xs font-bold text-gray-700">Attached photos ({activeIssue.photos.length})</p>
                   <div className="flex flex-wrap items-center gap-3">
                     {activeIssue.photos.map((pUrl, idx) => (
-                      <div key={idx} className="w-24 h-24 rounded-xl border border-gray-200 bg-white overflow-hidden p-1 flex items-center justify-center shrink-0">
+                      <div key={idx} className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl border border-gray-200 bg-white overflow-hidden p-1 flex items-center justify-center shrink-0">
                         <img
                           src={pUrl}
                           alt={`Proof ${idx + 1}`}
@@ -341,12 +359,12 @@ export default function Issues() {
               {activeIssue.status === 'OPEN' && (
                 <div>
                   <p className="text-xs font-bold text-gray-700 mb-2.5">Resolve by</p>
-                  <div className="flex flex-wrap items-center gap-2.5">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2.5">
                     <button
                       type="button"
                       disabled={actionLoading}
                       onClick={() => handleResolveAction('REFUND')}
-                      className="bg-[#0E6C3B] hover:bg-[#09522C] text-white font-bold text-xs sm:text-sm px-5 py-2.5 rounded-xl shadow-2xs transition-all disabled:opacity-60"
+                      className="bg-[#0E6C3B] hover:bg-[#09522C] text-white font-bold text-xs sm:text-sm px-5 py-2.5 rounded-xl shadow-2xs transition-all disabled:opacity-60 cursor-pointer text-center"
                     >
                       Refund ₹{activeIssue.refundAmount}
                     </button>
@@ -354,7 +372,7 @@ export default function Issues() {
                       type="button"
                       disabled={actionLoading}
                       onClick={() => handleResolveAction('REDELIVER')}
-                      className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold text-xs sm:text-sm px-5 py-2.5 rounded-xl shadow-2xs transition-all disabled:opacity-60"
+                      className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold text-xs sm:text-sm px-5 py-2.5 rounded-xl shadow-2xs transition-all disabled:opacity-60 cursor-pointer text-center"
                     >
                       Redeliver item
                     </button>
@@ -362,7 +380,7 @@ export default function Issues() {
                       type="button"
                       disabled={actionLoading}
                       onClick={() => handleResolveAction('REJECT')}
-                      className="bg-white border border-red-200 hover:bg-red-50 text-[#E03137] font-bold text-xs sm:text-sm px-5 py-2.5 rounded-xl shadow-2xs transition-all disabled:opacity-60"
+                      className="bg-white border border-red-200 hover:bg-red-50 text-[#E03137] font-bold text-xs sm:text-sm px-5 py-2.5 rounded-xl shadow-2xs transition-all disabled:opacity-60 cursor-pointer text-center"
                     >
                       Reject claim
                     </button>
@@ -384,11 +402,12 @@ export default function Issues() {
                   <div className="flex justify-end">
                     <button
                       type="button"
+                      disabled={actionLoading || !replyText.trim()}
                       onClick={handleSendReply}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gray-900 text-white font-bold text-xs hover:bg-gray-800 shadow-2xs transition-all"
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gray-900 text-white font-bold text-xs hover:bg-gray-800 shadow-2xs transition-all disabled:opacity-50"
                     >
                       <Send size={13} />
-                      Send reply
+                      {actionLoading ? 'Sending...' : 'Send reply'}
                     </button>
                   </div>
                 </div>

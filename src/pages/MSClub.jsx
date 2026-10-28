@@ -101,7 +101,7 @@ export default function MSClub() {
   const deliveryFeesWaived = members.reduce((sum, m) => sum + (m.rawSaved || 0), 0);
 
   return (
-    <div className="p-6 md:p-8 space-y-6 w-full">
+    <div className="p-3.5 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 w-full animate-fade-in">
       {/* Page Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">MS Club</h1>
@@ -111,33 +111,33 @@ export default function MSClub() {
       </div>
 
       {/* 4 Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Card 1 */}
-        <div className="bg-white rounded-xl border border-gray-200/90 p-5 shadow-2xs">
+        <div className="bg-white rounded-xl border border-gray-200/90 p-3.5 sm:p-5 shadow-2xs">
           <p className="text-xs font-semibold text-gray-600">Active members</p>
-          <p className="text-3xl font-extrabold text-gray-900 mt-1">{activeCount}</p>
-          <p className="text-xs text-gray-400 mt-1">+{activeCount} this month</p>
+          <p className="text-2xl sm:text-3xl font-extrabold text-gray-900 mt-1">{activeCount}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">+{activeCount} this month</p>
         </div>
 
         {/* Card 2 */}
-        <div className="bg-white rounded-xl border border-gray-200/90 p-5 shadow-2xs">
+        <div className="bg-white rounded-xl border border-gray-200/90 p-3.5 sm:p-5 shadow-2xs">
           <p className="text-xs font-semibold text-gray-600">Monthly revenue</p>
-          <p className="text-3xl font-extrabold text-gray-900 mt-1">₹{monthlyRevenue}</p>
-          <p className="text-xs text-gray-400 mt-1">From memberships</p>
+          <p className="text-2xl sm:text-3xl font-extrabold text-gray-900 mt-1">₹{monthlyRevenue}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">From memberships</p>
         </div>
 
         {/* Card 3 */}
-        <div className="bg-white rounded-xl border border-gray-200/90 p-5 shadow-2xs">
+        <div className="bg-white rounded-xl border border-gray-200/90 p-3.5 sm:p-5 shadow-2xs">
           <p className="text-xs font-semibold text-gray-600">Renewals in 7 days</p>
-          <p className="text-3xl font-extrabold text-gray-900 mt-1">{renewsIn7Days}</p>
-          <p className="text-xs text-gray-400 mt-1">Reminder sent automatically</p>
+          <p className="text-2xl sm:text-3xl font-extrabold text-gray-900 mt-1">{renewsIn7Days}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">Automated reminders</p>
         </div>
 
         {/* Card 4 */}
-        <div className="bg-white rounded-xl border border-gray-200/90 p-5 shadow-2xs">
-          <p className="text-xs font-semibold text-gray-600">Delivery fees waived</p>
-          <p className="text-3xl font-extrabold text-gray-900 mt-1">₹{deliveryFeesWaived}</p>
-          <p className="text-xs text-gray-400 mt-1">This month</p>
+        <div className="bg-white rounded-xl border border-gray-200/90 p-3.5 sm:p-5 shadow-2xs">
+          <p className="text-xs font-semibold text-gray-600">Delivery waived</p>
+          <p className="text-2xl sm:text-3xl font-extrabold text-gray-900 mt-1">₹{deliveryFeesWaived}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">This month</p>
         </div>
       </div>
 
@@ -145,10 +145,11 @@ export default function MSClub() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Members Table */}
         <div className="lg:col-span-8 bg-white rounded-xl border border-gray-200/90 shadow-2xs overflow-hidden">
-          <div className="p-5 pb-3">
+          <div className="p-4 sm:p-5 pb-3">
             <h2 className="text-base font-bold text-gray-900">Members</h2>
           </div>
-          <div className="overflow-x-auto">
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/50">
@@ -186,6 +187,40 @@ export default function MSClub() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Member Cards (< md screens) */}
+          <div className="block md:hidden divide-y divide-gray-100">
+            {members.length === 0 ? (
+              <div className="p-8 text-center text-gray-400 text-xs font-semibold">
+                No MS Club members yet.
+              </div>
+            ) : (
+              members.map((m) => (
+                <div key={m.id} className="p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sm text-gray-900">{m.name}</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#e6f4ea] text-[#137333]">
+                      {m.status}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                    <div>
+                      <span className="text-gray-400 text-[11px]">Since: </span>
+                      <span className="text-gray-700 font-medium">{m.since}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400 text-[11px]">Renews: </span>
+                      <span className="text-gray-700 font-medium">{m.renews}</span>
+                    </div>
+                  </div>
+                  <div className="pt-1 text-xs">
+                    <span className="text-gray-400 text-[11px]">Saved so far: </span>
+                    <span className="text-emerald-700 font-bold">{m.saved}</span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 

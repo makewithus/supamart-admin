@@ -14,7 +14,7 @@ export default function TopBar({ onOpenMobileMenu }) {
   const [searchQuery, setSearchQuery] = useState('');
   const notifRef = useRef(null);
 
-  const { counts: alertCounts } = useBadges();
+  const { counts: alertCounts, recentAlerts } = useBadges();
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -66,29 +66,29 @@ export default function TopBar({ onOpenMobileMenu }) {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between h-[60px] px-6 lg:px-8 bg-white border-b border-gray-200/90 shrink-0 shadow-2xs">
+    <header className="sticky top-0 z-30 flex items-center justify-between h-[60px] px-3 sm:px-6 lg:px-8 bg-white border-b border-gray-200/90 shrink-0 shadow-2xs">
       {/* Left: Mobile Menu Toggle + Global Search Bar */}
-      <div className="flex items-center gap-3 flex-1 max-w-xl">
+      <div className="flex items-center gap-2 sm:gap-3 flex-1 max-w-xl min-w-0">
         <button
           onClick={onOpenMobileMenu}
-          className="md:hidden p-1.5 text-gray-500 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors"
+          className="md:hidden p-1.5 text-gray-600 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors shrink-0"
           aria-label="Open sidebar"
         >
           <Menu size={20} />
         </button>
 
-        <form onSubmit={handleSearchSubmit} className="relative w-full max-w-md">
+        <form onSubmit={handleSearchSubmit} className="relative w-full max-w-md min-w-0">
           <div className="relative flex items-center">
-            <Search size={15} className="absolute left-3.5 text-gray-400 pointer-events-none" />
+            <Search size={15} className="absolute left-3 text-gray-400 pointer-events-none" />
             <input
               id="global-search-input"
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search orders, products, customers..."
-              className="w-full pl-9 pr-14 py-2 bg-gray-50/80 text-gray-800 placeholder-gray-400 text-xs sm:text-sm rounded-lg border border-gray-200 focus:outline-none focus:bg-white focus:border-[#0a7c47] focus:ring-1 focus:ring-[#0a7c47] transition-all shadow-2xs"
+              placeholder="Search..."
+              className="w-full pl-8 sm:pl-9 pr-4 sm:pr-14 py-1.5 sm:py-2 bg-gray-50/80 text-gray-800 placeholder-gray-400 text-xs sm:text-sm rounded-lg border border-gray-200 focus:outline-none focus:bg-white focus:border-[#0a7c47] focus:ring-1 focus:ring-[#0a7c47] transition-all shadow-2xs"
             />
-            <div className="absolute right-2.5 flex items-center pointer-events-none">
+            <div className="hidden sm:flex absolute right-2.5 items-center pointer-events-none">
               <kbd className="px-1.5 py-0.5 text-[10px] font-semibold text-gray-400 bg-white border border-gray-200 rounded shadow-2xs">
                 Ctrl K
               </kbd>
@@ -98,11 +98,11 @@ export default function TopBar({ onOpenMobileMenu }) {
       </div>
 
       {/* Right Controls */}
-      <div className="flex items-center gap-2.5 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 ml-2">
         {/* Store Open Toggle */}
-        <div className="flex items-center gap-2 px-3 py-1 bg-white border border-gray-200 rounded-full shadow-2xs">
+        <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 bg-white border border-gray-200 rounded-full shadow-2xs">
           <span className={`w-2 h-2 rounded-full shrink-0 ${storeOpen ? 'bg-[#0a7c47]' : 'bg-gray-300'}`} />
-          <span className="text-xs font-semibold text-gray-800 select-none">
+          <span className="hidden sm:inline text-xs font-semibold text-gray-800 select-none">
             {storeOpen ? 'Store open' : 'Store closed'}
           </span>
           <button
@@ -126,10 +126,10 @@ export default function TopBar({ onOpenMobileMenu }) {
           onClick={handleTestSound}
           type="button"
           aria-label="Test alert notification sound"
-          className="w-9 h-9 flex items-center justify-center rounded-lg bg-white border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors shadow-2xs"
+          className="hidden xs:flex sm:flex w-8 h-8 sm:w-9 sm:h-9 items-center justify-center rounded-lg bg-white border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors shadow-2xs"
           title="Test audio chime"
         >
-          <Volume2 size={16} strokeWidth={1.8} />
+          <Volume2 size={15} strokeWidth={1.8} />
         </button>
 
         {/* Notifications Bell */}
@@ -138,9 +138,9 @@ export default function TopBar({ onOpenMobileMenu }) {
             onClick={() => setNotificationsOpen((v) => !v)}
             type="button"
             aria-label="View notifications"
-            className="relative w-9 h-9 flex items-center justify-center rounded-lg bg-white border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors shadow-2xs"
+            className="relative w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-lg bg-white border border-gray-200 text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors shadow-2xs"
           >
-            <Bell size={16} strokeWidth={1.8} />
+            <Bell size={15} strokeWidth={1.8} />
             {(alertCounts.orders + alertCounts.payments + alertCounts.issues + alertCounts.products) > 0 && (
               <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full bg-[#ef4444] text-white text-[10px] font-bold shadow-2xs">
                 {alertCounts.orders + alertCounts.payments + alertCounts.issues + alertCounts.products}
@@ -150,7 +150,7 @@ export default function TopBar({ onOpenMobileMenu }) {
 
           {/* Notifications Dropdown */}
           {notificationsOpen && (
-            <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-card-hover border border-gray-200/90 py-3 z-50 animate-fade-in">
+            <div className="absolute right-0 mt-2 w-[calc(100vw-2rem)] max-w-sm bg-white rounded-xl shadow-card-hover border border-gray-200/90 py-3 z-50 animate-fade-in">
               <div className="flex items-center justify-between px-4 pb-2 border-b border-gray-100">
                 <span className="text-xs font-bold text-gray-900 uppercase tracking-wider">Alerts & Actions</span>
                 <span className="text-[10px] font-semibold text-[#0a7c47] bg-[#e6f4ea] px-2 py-0.5 rounded-full">
@@ -208,18 +208,44 @@ export default function TopBar({ onOpenMobileMenu }) {
                       </button>
                     )}
                     {alertCounts.products > 0 && (
-                      <button
-                        onClick={() => { navigate('/products'); setNotificationsOpen(false); }}
-                        className="w-full text-left px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="p-2 rounded-lg bg-amber-50 text-[#d97706] shrink-0 mt-0.5">
-                          <Package size={14} />
-                        </div>
-                        <div>
-                          <p className="text-xs font-bold text-gray-900">{alertCounts.products} Low Stock Items</p>
-                          <p className="text-[11px] text-gray-500">Refill inventory to avoid stockouts</p>
-                        </div>
-                      </button>
+                      <div>
+                        <button
+                          onClick={() => { navigate('/products', { state: { stockFilter: 'LOW' } }); setNotificationsOpen(false); }}
+                          className="w-full text-left px-4 py-2.5 flex items-start gap-3 hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="p-2 rounded-lg bg-amber-50 text-[#d97706] shrink-0 mt-0.5">
+                            <Package size={14} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-gray-900">{alertCounts.products} Low Stock Items</p>
+                            <p className="text-[11px] text-gray-500">Refill inventory to avoid stockouts</p>
+                          </div>
+                        </button>
+                        {recentAlerts && recentAlerts.length > 0 && (
+                          <div className="bg-amber-50/40 divide-y divide-amber-100/60 border-t border-amber-100/60">
+                            {recentAlerts.slice(0, 3).map((a) => (
+                              <button
+                                key={a.id}
+                                onClick={() => {
+                                  navigate('/products', { state: { search: a.productName } });
+                                  setNotificationsOpen(false);
+                                }}
+                                className="w-full text-left px-5 py-2 flex items-center justify-between text-xs hover:bg-amber-100/60 transition-colors"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${a.isOutOfStock ? 'bg-red-500' : 'bg-amber-500'}`} />
+                                  <span className="font-semibold text-gray-800 truncate text-[11px]">{a.productName}</span>
+                                </div>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ml-2 ${
+                                  a.isOutOfStock ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'
+                                }`}>
+                                  {a.isOutOfStock ? 'Out of stock' : `${a.currentStock ?? a.stock} left`}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </>
                 )}

@@ -187,11 +187,11 @@ export default function CategoryForm({ category, categories = [], onSuccess, onC
         </div>
       </div>
 
-      <div className="flex justify-end gap-3 pt-4 border-t border-neutral-100">
-        <Button variant="outline" type="button" onClick={onCancel} disabled={loading}>Cancel</Button>
-        <Button variant="primary" type="submit" disabled={loading}>
+      <div className="flex flex-col-reverse sm:flex-row justify-end gap-2.5 sm:gap-3 pt-4 border-t border-neutral-100">
+        <Button variant="outline" type="button" className="w-full sm:w-auto" onClick={onCancel} disabled={loading}>Cancel</Button>
+        <Button variant="primary" type="submit" className="w-full sm:w-auto" disabled={loading}>
           {loading
-            ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Saving…</span>
+            ? <span className="flex items-center justify-center gap-2"><Loader2 size={16} className="animate-spin" /> Saving…</span>
             : isEdit ? 'Save Changes' : 'Create Category'}
         </Button>
       </div>

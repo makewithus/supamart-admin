@@ -4,7 +4,7 @@ import {
   Download, Printer, Search, ChevronDown, Check, Clock, AlertCircle, Eye
 } from 'lucide-react';
 import { db } from '../config/firebase';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import OrderDetailsModal from '../components/OrderDetailsModal';
 import { apiPatch, apiGet } from '../services/api';
 import toast from 'react-hot-toast';
@@ -132,13 +132,10 @@ function mapOrderDoc(id, data) {
     setLoading(false);
   };
 
-  // Subscribe to live orders in real-time from Firestore with robust API fallback
+  // Subscribe to live orders in real-time from Firestore (with API fallback on error)
   useEffect(() => {
-    fetchOrdersFromApi();
-    const interval = setInterval(fetchOrdersFromApi, 10000);
-
     try {
-      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(50));
       const unsub = onSnapshot(
         q,
         (snap) => {
@@ -153,7 +150,6 @@ function mapOrderDoc(id, data) {
       );
 
       return () => {
-        clearInterval(interval);
         unsub();
       };
     } catch (e) {
@@ -264,11 +260,11 @@ function mapOrderDoc(id, data) {
   }, [orders]);
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 w-full animate-fade-in">
+    <div className="p-3.5 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 w-full animate-fade-in">
       {/* ── Page Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-black text-gray-900 tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
             Orders
           </h1>
           <p className="text-xs font-semibold text-gray-400 mt-1">
@@ -276,7 +272,7 @@ function mapOrderDoc(id, data) {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2 sm:gap-2.5 self-start sm:self-auto">
           <button
             onClick={() => {
               if (orders.length === 0) return toast.error('No orders to export');
@@ -301,25 +297,25 @@ function mapOrderDoc(id, data) {
               document.body.removeChild(link);
               toast.success('Orders CSV exported');
             }}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-200/90 rounded-xl text-xs font-bold text-gray-800 hover:bg-gray-50 shadow-2xs transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 bg-white border border-gray-200/90 rounded-xl text-xs font-bold text-gray-800 hover:bg-gray-50 shadow-2xs transition-colors cursor-pointer"
           >
-            <Download size={14} strokeWidth={2.2} />
+            <Download size={13} strokeWidth={2.2} />
             <span>Export CSV</span>
           </button>
 
           <button
             onClick={() => window.print()}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-200/90 rounded-xl text-xs font-bold text-gray-800 hover:bg-gray-50 shadow-2xs transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 bg-white border border-gray-200/90 rounded-xl text-xs font-bold text-gray-800 hover:bg-gray-50 shadow-2xs transition-colors cursor-pointer"
           >
-            <Printer size={14} strokeWidth={2.2} />
-            <span>Print packing slips</span>
+            <Printer size={13} strokeWidth={2.2} />
+            <span className="hidden xs:inline">Print slips</span>
           </button>
         </div>
       </div>
 
       {/* ── Urgent Attention Banner (Dynamic from live state) ── */}
       {newOrdersWaiting.length > 0 && (
-        <div className="p-4 bg-rose-50/70 border border-rose-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-2xs">
+        <div className="p-3.5 sm:p-4 bg-rose-50/70 border border-rose-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-2xs">
           <div className="flex items-center gap-2.5">
             <span className="w-2.5 h-2.5 rounded-full bg-[#dc2626] animate-pulse shrink-0" />
             <p className="text-xs font-semibold text-rose-950">
@@ -338,7 +334,7 @@ function mapOrderDoc(id, data) {
 
       {/* ── Rejected Orders Alert Banner ── */}
       {rejectedOrdersWaiting.length > 0 && (
-        <div className="p-4 bg-amber-50/90 border border-amber-200/90 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-2xs">
+        <div className="p-3.5 sm:p-4 bg-amber-50/90 border border-amber-200/90 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-2xs">
           <div className="flex items-center gap-2.5">
             <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
             <p className="text-xs font-semibold text-amber-950">
@@ -351,14 +347,14 @@ function mapOrderDoc(id, data) {
       {/* ── Orders Table Card Container ── */}
       <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs overflow-hidden">
         {/* Status Filter Tabs */}
-        <div className="px-5 pt-4 border-b border-gray-100 flex items-center gap-6 overflow-x-auto select-none">
+        <div className="px-3 sm:px-5 pt-3 sm:pt-4 border-b border-gray-100 flex items-center gap-4 sm:gap-6 overflow-x-auto select-none no-scrollbar">
           {STATUS_TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`pb-3.5 flex items-center gap-2 text-xs font-bold border-b-2 transition-all whitespace-nowrap cursor-pointer ${
+                className={`pb-3 sm:pb-3.5 flex items-center gap-1.5 sm:gap-2 text-xs font-bold border-b-2 transition-all whitespace-nowrap cursor-pointer ${
                   isActive
                     ? 'border-gray-900 text-gray-900'
                     : 'border-transparent text-gray-500 hover:text-gray-900'
@@ -382,25 +378,25 @@ function mapOrderDoc(id, data) {
         </div>
 
         {/* Search & Filter Toolbar */}
-        <div className="p-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[220px]">
+        <div className="p-3 sm:p-4 border-b border-gray-100 flex flex-wrap items-center gap-2.5 sm:gap-3">
+          <div className="relative flex-1 min-w-[200px] w-full sm:w-auto">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={15} />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by order #, customer name or phone..."
-              className="w-full pl-9 pr-3.5 py-2 text-xs bg-gray-50 border border-gray-200/80 rounded-xl focus:outline-none focus:border-emerald-600 focus:bg-white transition-all placeholder:text-gray-400 font-medium"
+              className="w-full pl-9 pr-3.5 py-1.5 sm:py-2 text-xs bg-gray-50 border border-gray-200/80 rounded-xl focus:outline-none focus:border-emerald-600 focus:bg-white transition-all placeholder:text-gray-400 font-medium"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             {/* Payment Filter */}
-            <div className="relative">
+            <div className="relative flex-1 sm:flex-none">
               <select
                 value={paymentFilter}
                 onChange={(e) => setPaymentFilter(e.target.value)}
-                className="appearance-none bg-white border border-gray-200/80 rounded-xl pl-3 pr-7 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none cursor-pointer shadow-2xs"
+                className="w-full appearance-none bg-white border border-gray-200/80 rounded-xl pl-3 pr-7 py-1.5 sm:py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none cursor-pointer shadow-2xs"
               >
                 <option>Any payment</option>
                 <option>Verify UTR</option>
@@ -410,11 +406,11 @@ function mapOrderDoc(id, data) {
             </div>
 
             {/* Partner Filter */}
-            <div className="relative">
+            <div className="relative flex-1 sm:flex-none">
               <select
                 value={partnerFilter}
                 onChange={(e) => setPartnerFilter(e.target.value)}
-                className="appearance-none bg-white border border-gray-200/80 rounded-xl pl-3 pr-7 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none cursor-pointer shadow-2xs"
+                className="w-full appearance-none bg-white border border-gray-200/80 rounded-xl pl-3 pr-7 py-1.5 sm:py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none cursor-pointer shadow-2xs"
               >
                 <option>Any partner</option>
                 <option>Not assigned</option>
@@ -429,8 +425,101 @@ function mapOrderDoc(id, data) {
           </div>
         </div>
 
-        {/* ── Table Container ── */}
-        <div className="overflow-x-auto">
+        {/* ── Mobile Order Cards List (< md screens) ── */}
+        <div className="block md:hidden divide-y divide-gray-100">
+          {loading ? (
+            <div className="p-8 text-center text-xs text-gray-400 font-semibold">
+              Loading live orders from database…
+            </div>
+          ) : filteredOrders.length === 0 ? (
+            <div className="p-8 text-center text-xs text-gray-400 font-semibold">
+              No orders matching this filter.
+            </div>
+          ) : (
+            filteredOrders.map((o) => (
+              <div
+                key={o.id}
+                onClick={() => setSelectedOrderForDrawer(o.raw)}
+                className="p-3.5 hover:bg-gray-50/70 transition-colors cursor-pointer space-y-2.5"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-gray-900 text-sm">#{o.orderNo}</span>
+                    {o.statusKey === 'NEW' && (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-600">
+                        New
+                      </span>
+                    )}
+                    {o.statusKey === 'PACKING' && (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700">
+                        Packing
+                      </span>
+                    )}
+                    {o.statusKey === 'OUT_FOR_DELIVERY' && (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-cyan-50 text-cyan-700">
+                        On the way
+                      </span>
+                    )}
+                    {o.statusKey === 'DELIVERED' && (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700">
+                        Delivered
+                      </span>
+                    )}
+                    {o.statusKey === 'CANCELLED' && (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-100 text-gray-600">
+                        Cancelled
+                      </span>
+                    )}
+                  </div>
+                  <span className="font-black text-gray-900 text-base">₹{o.total}</span>
+                </div>
+
+                <div className="flex items-center justify-between text-xs">
+                  <div>
+                    <p className="font-bold text-gray-900">{o.customer}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">{o.phoneArea}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold text-gray-600">{o.itemsCount} {o.itemsCount === 1 ? 'item' : 'items'}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{o.placed}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1 border-t border-gray-50 text-[11px]">
+                  <div>
+                    {o.paymentType === 'verify' && (
+                      <span className="px-2 py-0.5 rounded-md font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
+                        Verify UTR
+                      </span>
+                    )}
+                    {o.paymentType === 'paid' && (
+                      <span className="px-2 py-0.5 rounded-md font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                        Paid · UPI
+                      </span>
+                    )}
+                    {o.paymentType === 'cod' && (
+                      <span className="px-2 py-0.5 rounded-md font-bold bg-gray-100 text-gray-700 border border-gray-200/60">
+                        COD
+                      </span>
+                    )}
+                    {o.paymentType === 'failed' && (
+                      <span className="px-2 py-0.5 rounded-md font-bold bg-rose-50 text-rose-700 border border-rose-200/60">
+                        Failed
+                      </span>
+                    )}
+                  </div>
+
+                  <span className="text-gray-500 font-medium">
+                    {o.partner && o.partner !== 'Not assigned' && o.partner !== '—' ? o.partner : 'Unassigned'}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* ── Desktop Table Container (>= md screens) ── */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-gray-100 bg-[#FAFAFA] text-[11px] font-bold text-gray-400 tracking-wider uppercase select-none">

@@ -5,7 +5,7 @@ import { collection, query, orderBy, onSnapshot, doc, updateDoc } from 'firebase
 import Modal from '../components/ui/Modal';
 import ConfirmModal from '../components/ui/ConfirmModal';
 import CategoryForm from '../components/CategoryForm';
-import { apiDel } from '../services/api';
+import { apiDel, apiGet } from '../services/api';
 import toast from 'react-hot-toast';
 
 function groupHierarchically(cats) {
@@ -41,12 +41,19 @@ export default function Categories() {
     return () => unsub();
   }, []);
 
-  // Subscribe to products to compute category product counts
+  // Fetch products from cached search API once on mount to compute category product counts
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'products'), (snap) => {
-      setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    }, () => {});
-    return () => unsub();
+    let active = true;
+    apiGet('/products/search?q=')
+      .then((res) => {
+        if (!active) return;
+        const items = res?.items || [];
+        setProducts(items);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Map category id to product count
@@ -99,7 +106,7 @@ export default function Categories() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 w-full animate-fade-in">
+    <div className="p-3.5 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 w-full animate-fade-in">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -117,8 +124,8 @@ export default function Categories() {
         </button>
       </div>
 
-      {/* Table Container */}
-      <div className="bg-white rounded-xl border border-gray-200/90 shadow-2xs overflow-hidden">
+      {/* Desktop Table View */}
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200/90 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm border-collapse">
             <thead>
@@ -140,86 +147,161 @@ export default function Categories() {
                 </tr>
               ) : (
                 groups.map(({ parent, children }) => {
-                const subNames = children.map((c) => c.name);
-                let subText = 'No subcategories';
-                if (subNames.length > 0) {
-                  if (subNames.length <= 4) {
-                    subText = subNames.join(', ');
-                  } else {
-                    subText = `${subNames.slice(0, 4).join(', ')} +${subNames.length - 4}`;
+                  const subNames = children.map((c) => c.name);
+                  let subText = 'No subcategories';
+                  if (subNames.length > 0) {
+                    if (subNames.length <= 4) {
+                      subText = subNames.join(', ');
+                    } else {
+                      subText = `${subNames.slice(0, 4).join(', ')} +${subNames.length - 4}`;
+                    }
                   }
-                }
 
-                // Count products in parent category or any of its subcategories
-                const count = (productCountByCat[parent.id] || 0) +
-                  children.reduce((acc, c) => acc + (productCountByCat[c.id] || 0), 0);
+                  const count = (productCountByCat[parent.id] || 0) +
+                    children.reduce((acc, c) => acc + (productCountByCat[c.id] || 0), 0);
 
-                const hasImage = !!parent.image;
-                const isVisible = parent.isActive !== false;
+                  const hasImage = !!parent.image;
+                  const isVisible = parent.isActive !== false;
 
-                return (
-                  <tr
-                    key={parent.id}
-                    onClick={() => handleEditClick(parent)}
-                    className="hover:bg-gray-50/70 transition-colors cursor-pointer group"
-                  >
-                    {/* Drag Handle */}
-                    <td className="w-10 px-4 py-4 text-gray-400 group-hover:text-gray-600">
-                      <GripVertical size={16} className="cursor-grab" />
-                    </td>
-
-                    {/* Category Name */}
-                    <td className="px-4 py-4 font-bold text-gray-900 text-sm whitespace-nowrap">
-                      {parent.name}
-                    </td>
-
-                    {/* Subcategories */}
-                    <td className="px-4 py-4 text-gray-500 text-sm">
-                      {subText}
-                    </td>
-
-                    {/* Products count: red if <= 2 as shown in screenshot */}
-                    <td className="px-4 py-4 text-sm whitespace-nowrap">
-                      <span className={count <= 2 ? 'text-red-600 font-bold' : 'text-gray-900 font-bold'}>
-                        {count}
-                      </span>
-                    </td>
-
-                    {/* Image Status Badge */}
-                    <td className="px-4 py-4 text-sm whitespace-nowrap">
-                      {hasImage ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#e6f4ea] text-[#137333]">
-                          Image set
+                  return (
+                    <tr
+                      key={parent.id}
+                      onClick={() => handleEditClick(parent)}
+                      className="hover:bg-gray-50/70 transition-colors cursor-pointer group"
+                    >
+                      <td className="w-10 px-4 py-4 text-gray-400 group-hover:text-gray-600">
+                        <GripVertical size={16} className="cursor-grab" />
+                      </td>
+                      <td className="px-4 py-4 font-bold text-gray-900 text-sm whitespace-nowrap">
+                        {parent.name}
+                      </td>
+                      <td className="px-4 py-4 text-gray-500 text-sm">
+                        {subText}
+                      </td>
+                      <td className="px-4 py-4 text-sm whitespace-nowrap">
+                        <span className={count <= 2 ? 'text-red-600 font-bold' : 'text-gray-900 font-bold'}>
+                          {count}
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#fce8e6] text-[#c5221f]">
-                          No image
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Visible in app Toggle */}
-                    <td className="px-6 py-4 text-right whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleVisible(parent, e)}
-                        className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          isVisible ? 'bg-[#0a7c47]' : 'bg-gray-300'
-                        }`}
-                      >
-                        <span
-                          className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                            isVisible ? 'translate-x-3' : 'translate-x-0'
+                      </td>
+                      <td className="px-4 py-4 text-sm whitespace-nowrap">
+                        {hasImage ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#e6f4ea] text-[#137333]">
+                            Image set
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#fce8e6] text-[#c5221f]">
+                            No image
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleVisible(parent, e)}
+                          className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                            isVisible ? 'bg-[#0a7c47]' : 'bg-gray-300'
                           }`}
-                        />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              }))}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                              isVisible ? 'translate-x-3' : 'translate-x-0'
+                            }`}
+                          />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Mobile Card List (< md screens) */}
+      <div className="block md:hidden space-y-3">
+        {groups.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200/90 p-8 text-center text-sm text-gray-500 font-medium">
+            No categories found. Tap "Add category" above to create one.
+          </div>
+        ) : (
+          groups.map(({ parent, children }) => {
+            const subNames = children.map((c) => c.name);
+            const count = (productCountByCat[parent.id] || 0) +
+              children.reduce((acc, c) => acc + (productCountByCat[c.id] || 0), 0);
+            const hasImage = !!parent.image;
+            const isVisible = parent.isActive !== false;
+
+            return (
+              <div
+                key={parent.id}
+                onClick={() => handleEditClick(parent)}
+                className="bg-white rounded-xl border border-gray-200/90 p-4 shadow-2xs hover:shadow-md transition-all cursor-pointer active:bg-gray-50/80"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-10 h-10 rounded-lg bg-gray-50 border border-gray-200/80 flex items-center justify-center shrink-0 overflow-hidden">
+                      {parent.image ? (
+                        <img src={parent.image} alt={parent.name} className="w-full h-full object-contain" />
+                      ) : (
+                        <ImageIcon size={18} className="text-gray-400" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="text-sm font-bold text-gray-900 truncate">{parent.name}</h2>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className={`text-[11px] font-bold ${count <= 2 ? 'text-red-600' : 'text-gray-500'}`}>
+                          {count} {count === 1 ? 'product' : 'products'}
+                        </span>
+                        <span className="text-gray-300">·</span>
+                        {hasImage ? (
+                          <span className="text-[10px] font-semibold text-[#137333] bg-[#e6f4ea] px-1.5 py-0.2 rounded">
+                            Image
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold text-[#c5221f] bg-[#fce8e6] px-1.5 py-0.2 rounded">
+                            No image
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 pt-0.5" onClick={(e) => e.stopPropagation()}>
+                    <span className="text-[11px] font-medium text-gray-500">Live</span>
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleVisible(parent, e)}
+                      aria-label="Toggle visible in app"
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        isVisible ? 'bg-[#0a7c47]' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          isVisible ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                {subNames.length > 0 && (
+                  <div className="mt-3 pt-2.5 border-t border-gray-100 flex flex-wrap gap-1.5">
+                    {subNames.map((s, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2 py-0.5 rounded-md bg-gray-50 text-[11px] font-medium text-gray-600 border border-gray-200/60"
+                      >
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Edit/Add Modal */}

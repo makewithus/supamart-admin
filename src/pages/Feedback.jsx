@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Star, CheckCircle2, ThumbsUp, ThumbsDown, Phone, Clock, Package } from 'lucide-react';
 import { db } from '../config/firebase';
-import { collection, query, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { apiGet } from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -52,7 +52,7 @@ export default function Feedback() {
 
     let unsub = () => {};
     try {
-      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(50));
       unsub = onSnapshot(
         q,
         (snap) => {
@@ -69,11 +69,8 @@ export default function Feedback() {
       console.warn('Firestore subscription failed, relying on API:', e);
     }
 
-    const interval = setInterval(fetchOrdersFromApi, 12000);
-
     return () => {
       unsub();
-      clearInterval(interval);
     };
   }, [fetchOrdersFromApi]);
 
@@ -191,7 +188,7 @@ export default function Feedback() {
   };
 
   return (
-    <div className="p-6 md:p-8 space-y-6 w-full">
+    <div className="p-3.5 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 w-full animate-fade-in">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Ratings & reviews</h1>
@@ -203,7 +200,7 @@ export default function Feedback() {
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Card: Summary Breakdown (col-span-4) */}
-        <div className="lg:col-span-4 bg-white rounded-xl border border-gray-200/90 p-6 shadow-2xs">
+        <div className="lg:col-span-4 bg-white rounded-xl border border-gray-200/90 p-4 sm:p-6 shadow-2xs">
           {/* Big Rating */}
           <div className="flex items-baseline gap-1">
             <span className="text-4xl font-extrabold text-gray-900 tracking-tight">{avgRating}</span>
@@ -224,7 +221,7 @@ export default function Feedback() {
                   key={row.star}
                   type="button"
                   onClick={() => setFilterTab(row.star >= 4 ? String(row.star) : 'LOW')}
-                  className="w-full flex items-center text-xs hover:bg-gray-50 p-1 rounded-md transition-colors text-left"
+                  className="w-full flex items-center text-xs hover:bg-gray-50 p-1 rounded-md transition-colors text-left cursor-pointer"
                 >
                   <span className="w-8 font-semibold text-gray-600 flex items-center gap-1">
                     {row.star}
@@ -244,7 +241,7 @@ export default function Feedback() {
         </div>
 
         {/* Right Card: Reviews List (col-span-8) */}
-        <div className="lg:col-span-8 bg-white rounded-xl border border-gray-200/90 p-6 shadow-2xs space-y-4">
+        <div className="lg:col-span-8 bg-white rounded-xl border border-gray-200/90 p-4 sm:p-6 shadow-2xs space-y-4">
           {/* Header & Filter Tabs */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-gray-100 gap-3">
             <div>
@@ -255,11 +252,11 @@ export default function Feedback() {
             </div>
 
             {/* Filter Tabs */}
-            <div className="flex flex-wrap items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+            <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl overflow-x-auto no-scrollbar">
               <button
                 type="button"
                 onClick={() => setFilterTab('ALL')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                   filterTab === 'ALL'
                     ? 'bg-white text-gray-900 shadow-2xs'
                     : 'text-gray-600 hover:text-gray-900'

@@ -58,10 +58,11 @@ export default function DeliveryPartners() {
     }
   }, []);
 
-  // Subscribe in real-time to orders collection to calculate dynamic live metrics
+  // Subscribe in real-time to recent orders to calculate dynamic live metrics
   useEffect(() => {
     try {
-      const unsub = onSnapshot(collection(db, 'orders'), (snap) => {
+      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(50));
+      const unsub = onSnapshot(q, (snap) => {
         setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       });
       return () => unsub();
@@ -264,7 +265,7 @@ export default function DeliveryPartners() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 w-full animate-fade-in">
+    <div className="p-3.5 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 w-full animate-fade-in">
       {/* ── Page Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -424,7 +425,8 @@ export default function DeliveryPartners() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider text-gray-400 bg-gray-50/50">
@@ -640,6 +642,145 @@ export default function DeliveryPartners() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Deliveries Card List (< md screens) */}
+        <div className="block md:hidden space-y-3">
+          {deliveriesList.length === 0 ? (
+            <div className="py-10 text-center text-gray-400 font-semibold bg-gray-50/50 rounded-xl">
+              No delivery orders matching the selected filter.
+            </div>
+          ) : (
+            deliveriesList.map((d) => (
+              <div
+                key={d.id}
+                className="bg-white rounded-xl border border-gray-200/90 p-4 shadow-2xs space-y-3"
+              >
+                {/* Header: Order No, Placed, Total & Status */}
+                <div className="flex items-start justify-between gap-2 border-b border-gray-100 pb-2.5">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-gray-900 text-sm">{d.orderNo}</span>
+                      <span className="text-[11px] text-gray-400">· {d.placed}</span>
+                    </div>
+                    <div className="text-[11px] text-gray-600 mt-0.5">
+                      {d.itemsCount} items · {d.itemsSummary}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-extrabold text-sm text-gray-900">₹{d.total}</div>
+                    <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      d.isPaid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                    }`}>
+                      {d.paymentMethod === 'COD' ? 'COD' : d.isPaid ? 'Paid' : 'Pending'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Customer Info */}
+                <div className="text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-gray-900">{d.customer}</span>
+                    {d.phone && (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleCall(d.phone)}
+                          className="px-2 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-bold flex items-center gap-1"
+                        >
+                          <Phone size={10} /> Call
+                        </button>
+                        <button
+                          onClick={() => window.open(`https://wa.me/91${String(d.phone).replace(/\D/g, '')}`, '_blank')}
+                          className="px-2 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center gap-1"
+                        >
+                          <MessageSquare size={10} /> WhatsApp
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-500 leading-relaxed">{d.address}</p>
+                  {d.instructions ? (
+                    <div className="p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-900 font-semibold">
+                      📌 {typeof d.instructions === 'string' ? d.instructions : String(d.instructions)}
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Partner assignment & status */}
+                <div className="pt-2 border-t border-gray-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-gray-700">Partner: {d.partnerName}</span>
+                      {d.acceptanceStatus === 'ACCEPTED' && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-emerald-100 text-emerald-800">
+                          Accepted
+                        </span>
+                      )}
+                      {d.acceptanceStatus === 'REJECTED' && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-rose-100 text-rose-800">
+                          Rejected
+                        </span>
+                      )}
+                      {d.acceptanceStatus === 'PENDING' && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-100 text-amber-800">
+                          Pending
+                        </span>
+                      )}
+                    </div>
+                    {/* Delivery Status Badge */}
+                    {d.isDelivered || d.isConfirmed ? (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                        ✓ Delivered
+                      </span>
+                    ) : d.isOutForDelivery ? (
+                      <span className="text-[10px] font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded">
+                        Out for delivery
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {!d.isDelivered && (
+                    <select
+                      value={d.acceptanceStatus === 'REJECTED' ? '' : (d.assignedPartnerId || '')}
+                      onChange={(e) => handleAssign(d.id, e.target.value)}
+                      className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-gray-50 border border-gray-200 text-gray-800 focus:bg-white focus:outline-none focus:border-emerald-600"
+                    >
+                      <option value="">
+                        {d.acceptanceStatus === 'REJECTED'
+                          ? '⚠️ Re-assign partner...'
+                          : d.assignedPartnerId
+                          ? 'Re-assign partner...'
+                          : 'Assign partner...'}
+                      </option>
+                      {partners.map((p) => {
+                        const isOffDuty = p.isOnDuty === false || p.isActive === false;
+                        return (
+                          <option key={p.id} value={p.id} disabled={isOffDuty}>
+                            {p.name} {isOffDuty ? '(Off Duty)' : '(On Duty)'}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  )}
+
+                  {d.syncLocation && typeof d.syncLocation.lat === 'number' && (
+                    <div className="flex items-center justify-between text-[11px] pt-1">
+                      <span className="text-gray-500 flex items-center gap-1">
+                        <MapPin size={11} className="text-[#0A7C47]" />
+                        {d.syncLocation.lat.toFixed(4)}, {d.syncLocation.lng.toFixed(4)}
+                      </span>
+                      <button
+                        onClick={() => window.open(`https://www.google.com/maps?q=${d.syncLocation.lat},${d.syncLocation.lng}`, '_blank')}
+                        className="text-emerald-700 font-bold hover:underline inline-flex items-center gap-0.5"
+                      >
+                        Maps <ExternalLink size={10} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 

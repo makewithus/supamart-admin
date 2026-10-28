@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { FileText, Download, ChevronDown, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { db } from '../config/firebase';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { apiGet } from '../services/api';
 
 function formatRupee(num = 0) {
   return new Intl.NumberFormat('en-IN').format(Math.round(num));
@@ -14,34 +15,43 @@ export default function Reports() {
   const [refunds, setRefunds] = useState([]);
   const [products, setProducts] = useState([]);
 
-  // Subscribe to real-time collections
+  // Load report data once on mount (with bounded limits to prevent quota spikes)
   useEffect(() => {
-    try {
-      const unsubOrders = onSnapshot(query(collection(db, 'orders'), orderBy('createdAt', 'desc')), (snap) => {
-        setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      }, () => {});
+    let active = true;
 
-      const unsubRefunds = onSnapshot(collection(db, 'refunds'), (snap) => {
-        setRefunds(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      }, () => {});
+    async function loadReportData() {
+      try {
+        const [ordersSnap, refundsSnap, prodsRes] = await Promise.allSettled([
+          getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(200))),
+          getDocs(query(collection(db, 'refunds'), orderBy('createdAt', 'desc'), limit(100))),
+          apiGet('/products/search?q='),
+        ]);
 
-      const unsubProducts = onSnapshot(collection(db, 'products'), (snap) => {
-        setProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      }, () => {});
+        if (!active) return;
 
-      return () => {
-        unsubOrders();
-        unsubRefunds();
-        unsubProducts();
-      };
-    } catch (_) {}
+        if (ordersSnap.status === 'fulfilled') {
+          setOrders(ordersSnap.value.docs.map((d) => ({ id: d.id, ...d.data() })));
+        }
+        if (refundsSnap.status === 'fulfilled') {
+          setRefunds(refundsSnap.value.docs.map((d) => ({ id: d.id, ...d.data() })));
+        }
+        if (prodsRes.status === 'fulfilled') {
+          setProducts(prodsRes.value?.items || []);
+        }
+      } catch (_) {}
+    }
+
+    loadReportData();
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Compute live KPIs
   const { grossSales, deliveredCount, totalRefundAmount, refundCount, netSales } = useMemo(() => {
     const delivered = orders.filter((o) => o.status === 'DELIVERED');
     const gross = delivered.reduce((sum, o) => sum + (o.total || 0), 0);
-    const refundAmt = refunds.reduce((sum, r) => sum + (r.amount || 0), 0);
+    const refundAmt = refunds.reduce((sum, r) => sum + Number(r.totalRefund ?? r.amount ?? r.refundAmount ?? 0), 0);
 
     return {
       grossSales: gross,
@@ -610,7 +620,7 @@ export default function Reports() {
   };
 
   return (
-    <div className="p-6 lg:p-8 w-full space-y-6 animate-fade-in">
+    <div className="p-3.5 sm:p-6 lg:p-8 w-full space-y-4 sm:space-y-6 animate-fade-in">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -621,7 +631,7 @@ export default function Reports() {
         </div>
 
         {/* Top Right Filter Dropdown */}
-        <div className="relative">
+        <div className="relative self-start sm:self-auto">
           <select
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
@@ -639,29 +649,29 @@ export default function Reports() {
       </div>
 
       {/* 4 Stat KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-2xs">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-200/80 p-3.5 sm:p-5 shadow-2xs">
           <p className="text-xs text-gray-500 font-medium">Gross sales</p>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1 tracking-tight">₹{formatRupee(grossSales)}</p>
-          <p className="text-[11px] text-gray-400 mt-1">{deliveredCount} delivered orders</p>
+          <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-1 tracking-tight">₹{formatRupee(grossSales)}</p>
+          <p className="text-[10px] sm:text-[11px] text-gray-400 mt-0.5">{deliveredCount} delivered orders</p>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-2xs">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-200/80 p-3.5 sm:p-5 shadow-2xs">
           <p className="text-xs text-gray-500 font-medium">Refunds</p>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1 tracking-tight">₹{formatRupee(totalRefundAmount)}</p>
-          <p className="text-[11px] text-gray-400 mt-1">{refundCount} refunds</p>
+          <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-1 tracking-tight">₹{formatRupee(totalRefundAmount)}</p>
+          <p className="text-[10px] sm:text-[11px] text-gray-400 mt-0.5">{refundCount} refunds</p>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-2xs">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-200/80 p-3.5 sm:p-5 shadow-2xs">
           <p className="text-xs text-gray-500 font-medium">Net sales</p>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1 tracking-tight">₹{formatRupee(netSales)}</p>
-          <p className="text-[11px] text-gray-400 mt-1">After refunds and coupons</p>
+          <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-1 tracking-tight">₹{formatRupee(netSales)}</p>
+          <p className="text-[10px] sm:text-[11px] text-gray-400 mt-0.5">After refunds</p>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-2xs">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-200/80 p-3.5 sm:p-5 shadow-2xs">
           <p className="text-xs text-gray-500 font-medium">GST collected</p>
-          <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1 tracking-tight">₹{formatRupee(grossSales * 0.05)}</p>
-          <p className="text-[11px] text-gray-400 mt-1">5% average composite rate</p>
+          <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-1 tracking-tight">₹{formatRupee(grossSales * 0.05)}</p>
+          <p className="text-[10px] sm:text-[11px] text-gray-400 mt-0.5">5% avg composite</p>
         </div>
       </div>
 
@@ -673,10 +683,10 @@ export default function Reports() {
           {reportItems.map((item) => (
             <div
               key={item.id}
-              className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-gray-50/50 transition-colors"
+              className="px-4 sm:px-6 py-3.5 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 hover:bg-gray-50/50 transition-colors"
             >
-              <div className="flex items-start gap-3.5">
-                <div className="p-2.5 rounded-xl bg-gray-50 text-gray-600 border border-gray-100 shrink-0 mt-0.5">
+              <div className="flex items-start gap-3 sm:gap-3.5">
+                <div className="p-2 sm:p-2.5 rounded-xl bg-gray-50 text-gray-600 border border-gray-100 shrink-0 mt-0.5">
                   <FileText size={18} />
                 </div>
                 <div>
@@ -685,17 +695,17 @@ export default function Reports() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+              <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 pt-1 sm:pt-0">
                 <button
                   onClick={() => downloadCsv(item)}
-                  className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-2xs flex items-center gap-1.5"
+                  className="flex-1 sm:flex-none justify-center px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <Download size={13} />
                   <span>CSV</span>
                 </button>
                 <button
                   onClick={() => downloadPdf(item)}
-                  className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-2xs"
+                  className="flex-1 sm:flex-none justify-center px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-2xs cursor-pointer text-center"
                 >
                   Print PDF
                 </button>

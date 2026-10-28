@@ -27,6 +27,9 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
     code:        '',
     title:       '',
     description: '',
+    tag:         '',
+    tagColor:    '#0a7c47',
+    sortOrder:   '',
     kind:        'PERCENT',
     value:       '',
     maxValue:    '',
@@ -72,6 +75,9 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
         code:        offer.code || '',
         title:       offer.title || '',
         description: offer.description || '',
+        tag:         offer.tag || '',
+        tagColor:    offer.tagColor || '#0a7c47',
+        sortOrder:   offer.sortOrder != null ? offer.sortOrder.toString() : '',
         kind:        offer.kind || 'PERCENT',
         value:       offer.value?.toString() || '',
         maxValue:    (offer.maxDiscount ?? offer.maxValue)?.toString() || '',
@@ -129,6 +135,9 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
         code:        formData.code.trim().toUpperCase(),
         title:       formData.title || '',
         description: formData.description || '',
+        tag:         formData.tag ? formData.tag.trim().toUpperCase() : null,
+        tagColor:    formData.tagColor || '#0a7c47',
+        sortOrder:   formData.sortOrder ? Number(formData.sortOrder) : null,
         kind:        formData.kind,
         value:       Number(formData.value),
         validFrom:   new Date(formData.validFrom).getTime(),
@@ -159,6 +168,17 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
 
   const inputClass = "w-full px-4 py-2.5 rounded-xl bg-neutral-50 border border-neutral-200 text-sm focus:outline-none focus:border-primary-900 focus:ring-2 focus:ring-primary-900/10";
 
+  const COLOR_PRESETS = [
+    { label: 'Forest Green', value: '#0a7c47' },
+    { label: 'Charcoal Black', value: '#121712' },
+    { label: 'Fresh Olive', value: '#4e8a3e' },
+    { label: 'Amber Gold', value: '#b57a00' },
+    { label: 'Cyan Blue', value: '#0891b2' },
+    { label: 'Violet', value: '#7c3aed' },
+    { label: 'Warm Orange', value: '#d97706' },
+    { label: 'Royal Blue', value: '#2563eb' },
+  ];
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
@@ -174,15 +194,77 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
           />
         </div>
         <div>
-          <label className="block text-xs font-semibold text-neutral-500 mb-1">Title</label>
+          <label className="block text-xs font-semibold text-neutral-500 mb-1">Headline / Title</label>
           <input
             type="text"
             className={inputClass}
             value={formData.title}
             onChange={e => setFormData({ ...formData, title: e.target.value })}
-            placeholder="e.g. Summer Special"
+            placeholder="e.g. Save ₹50 on your first order"
           />
         </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <label className="block text-xs font-semibold text-neutral-500 mb-1">Badge Tag</label>
+          <input
+            type="text"
+            className={`${inputClass} uppercase font-bold`}
+            maxLength={6}
+            value={formData.tag}
+            onChange={e => setFormData({ ...formData, tag: e.target.value.toUpperCase() })}
+            placeholder="e.g. NEW, CLUB"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-neutral-500 mb-1">Badge Color</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              className="h-10 w-12 rounded-lg cursor-pointer border border-neutral-200 bg-white p-1"
+              value={formData.tagColor || '#0a7c47'}
+              onChange={e => setFormData({ ...formData, tagColor: e.target.value })}
+            />
+            <input
+              type="text"
+              className={`${inputClass} font-mono text-xs`}
+              value={formData.tagColor}
+              onChange={e => setFormData({ ...formData, tagColor: e.target.value })}
+              placeholder="#0a7c47"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-neutral-500 mb-1">Display Priority</label>
+          <input
+            type="number"
+            min="1"
+            className={inputClass}
+            value={formData.sortOrder}
+            onChange={e => setFormData({ ...formData, sortOrder: e.target.value })}
+            placeholder="1 = first"
+          />
+        </div>
+      </div>
+
+      {/* Preset color swatches */}
+      <div className="flex flex-wrap gap-1.5 items-center">
+        <span className="text-[11px] text-neutral-400 mr-1">Presets:</span>
+        {COLOR_PRESETS.map((p) => (
+          <button
+            key={p.value}
+            type="button"
+            onClick={() => setFormData({ ...formData, tagColor: p.value })}
+            style={{ backgroundColor: p.value }}
+            className={`w-6 h-6 rounded-full border-2 transition-transform ${
+              formData.tagColor?.toLowerCase() === p.value.toLowerCase()
+                ? 'scale-110 border-neutral-900 shadow-sm'
+                : 'border-white hover:scale-105'
+            }`}
+            title={p.label}
+          />
+        ))}
       </div>
 
       <div>
@@ -192,7 +274,7 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
           rows={2}
           value={formData.description}
           onChange={e => setFormData({ ...formData, description: e.target.value })}
-          placeholder="e.g. Save 10% on your orders above ₹199"
+          placeholder="e.g. Valid on first order above ₹199."
         />
       </div>
 
@@ -351,11 +433,11 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
         </div>
       </div>
 
-      <div className="flex justify-end gap-3 pt-4 border-t border-neutral-100">
-        <Button variant="outline" type="button" onClick={onCancel} disabled={loading}>Cancel</Button>
-        <Button variant="primary" type="submit" disabled={loading}>
+      <div className="flex flex-col-reverse sm:flex-row justify-end gap-2.5 sm:gap-3 pt-4 border-t border-neutral-100">
+        <Button variant="outline" type="button" className="w-full sm:w-auto" onClick={onCancel} disabled={loading}>Cancel</Button>
+        <Button variant="primary" type="submit" className="w-full sm:w-auto" disabled={loading}>
           {loading
-            ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Saving…</span>
+            ? <span className="flex items-center justify-center gap-2"><Loader2 size={16} className="animate-spin" /> Saving…</span>
             : isEdit ? 'Save Changes' : 'Create Offer'}
         </Button>
       </div>

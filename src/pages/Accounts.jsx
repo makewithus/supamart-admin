@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Lock, CheckCircle2, XCircle } from 'lucide-react';
 import { db } from '../config/firebase';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import Modal from '../components/ui/Modal';
 import PaymentVerificationModal from '../components/PaymentVerificationModal';
 import OrderDetailsModal from '../components/OrderDetailsModal';
@@ -43,9 +43,8 @@ export default function Accounts() {
 
   useEffect(() => {
     fetchOrdersFromApi();
-    const interval = setInterval(fetchOrdersFromApi, 10000);
 
-    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(100));
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -58,7 +57,6 @@ export default function Accounts() {
       }
     );
     return () => {
-      clearInterval(interval);
       unsub();
     };
   }, []);
@@ -69,7 +67,7 @@ export default function Accounts() {
   }, [orders]);
 
   const toVerifyList = useMemo(() => {
-    return upiOrders.filter((o) => o.paymentStatus === 'AWAITING_CONFIRMATION' || o.paymentStatus === 'PENDING');
+    return upiOrders.filter((o) => (o.paymentStatus === 'AWAITING_CONFIRMATION' || o.paymentStatus === 'PENDING') && o.status !== 'CANCELLED');
   }, [upiOrders]);
 
   const verifiedList = useMemo(() => {
@@ -122,7 +120,7 @@ export default function Accounts() {
       await apiPatch(`/orders/${order.id}/mark-paid`);
       toast.success(`Payment verified for Order #${order.orderNo || order.id?.slice(-4)}`);
     } catch (err) {
-      toast.error(err.message || 'Failed to verify payment');
+      toast.error(err.response?.data?.error || err.message || 'Failed to verify payment');
     } finally {
       setActionLoading(false);
     }
@@ -146,7 +144,7 @@ export default function Accounts() {
       toast.success(`Payment rejected for Order #${rejectOrder.orderNo || rejectOrder.id?.slice(-4)}`);
       setRejectOrder(null);
     } catch (err) {
-      toast.error(err.message || 'Failed to reject payment');
+      toast.error(err.response?.data?.error || err.message || 'Failed to reject payment');
     } finally {
       setActionLoading(false);
     }
@@ -163,10 +161,10 @@ export default function Accounts() {
   const allCount = upiOrders.length;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 w-full animate-fade-in">
+    <div className="p-3.5 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 w-full animate-fade-in">
       {/* Page Title & Subtitle */}
       <div>
-        <h1 className="text-2xl lg:text-[28px] font-extrabold text-gray-900 tracking-tight leading-none">
+        <h1 className="text-xl sm:text-2xl lg:text-[28px] font-extrabold text-gray-900 tracking-tight leading-none">
           Payments
         </h1>
         <p className="text-xs sm:text-sm text-gray-500 font-normal mt-1.5">
@@ -175,47 +173,47 @@ export default function Accounts() {
       </div>
 
       {/* 4 Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Waiting to verify */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs">
-          <p className="text-xs font-semibold text-gray-500">Waiting to verify</p>
-          <p className="text-2xl font-black text-gray-900 tracking-tight mt-1.5">
+        <div className="bg-white rounded-2xl p-3.5 sm:p-5 border border-gray-100 shadow-2xs flex flex-col justify-between">
+          <p className="text-[11px] sm:text-xs font-semibold text-gray-500">Waiting to verify</p>
+          <p className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight mt-1">
             ₹{waitingAmount.toLocaleString('en-IN')}
           </p>
-          <p className="text-xs text-gray-400 font-medium mt-1">
+          <p className="text-[11px] sm:text-xs text-gray-400 font-medium mt-1">
             {toVerifyCount} {toVerifyCount === 1 ? 'payment' : 'payments'}
           </p>
         </div>
 
         {/* Oldest waiting */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs">
-          <p className="text-xs font-semibold text-gray-500">Oldest waiting</p>
-          <p className={`text-2xl font-black tracking-tight mt-1.5 ${oldestWaitingOrder ? 'text-[#E03137]' : 'text-gray-400'}`}>
+        <div className="bg-white rounded-2xl p-3.5 sm:p-5 border border-gray-100 shadow-2xs flex flex-col justify-between">
+          <p className="text-[11px] sm:text-xs font-semibold text-gray-500">Oldest waiting</p>
+          <p className={`text-xl sm:text-2xl font-black tracking-tight mt-1 ${oldestWaitingOrder ? 'text-[#E03137]' : 'text-gray-400'}`}>
             {oldestWaitingOrder ? formatWaiting(oldestWaitingOrder.createdAt) : '—'}
           </p>
-          <p className="text-xs text-gray-400 font-medium mt-1 truncate">
+          <p className="text-[11px] sm:text-xs text-gray-400 font-medium mt-1 truncate">
             {oldestWaitingOrder ? `Order #${oldestWaitingOrder.orderNo || oldestWaitingOrder.id?.slice(-4)} · awaiting` : 'All caught up'}
           </p>
         </div>
 
         {/* Verified today */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs">
-          <p className="text-xs font-semibold text-gray-500">Verified today</p>
-          <p className="text-2xl font-black text-[#0E6C3B] tracking-tight mt-1.5">
+        <div className="bg-white rounded-2xl p-3.5 sm:p-5 border border-gray-100 shadow-2xs flex flex-col justify-between">
+          <p className="text-[11px] sm:text-xs font-semibold text-gray-500">Verified today</p>
+          <p className="text-xl sm:text-2xl font-black text-[#0E6C3B] tracking-tight mt-1">
             ₹{verifiedTodayAmount.toLocaleString('en-IN')}
           </p>
-          <p className="text-xs text-gray-400 font-medium mt-1">
+          <p className="text-[11px] sm:text-xs text-gray-400 font-medium mt-1">
             {verifiedTodayOrders.length} {verifiedTodayOrders.length === 1 ? 'payment' : 'payments'}
           </p>
         </div>
 
         {/* Cash to collect */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-2xs">
-          <p className="text-xs font-semibold text-gray-500">Cash to collect</p>
-          <p className="text-2xl font-black text-gray-900 tracking-tight mt-1.5">
+        <div className="bg-white rounded-2xl p-3.5 sm:p-5 border border-gray-100 shadow-2xs flex flex-col justify-between">
+          <p className="text-[11px] sm:text-xs font-semibold text-gray-500">Cash to collect</p>
+          <p className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight mt-1">
             ₹{cashToCollectAmount.toLocaleString('en-IN')}
           </p>
-          <p className="text-xs text-gray-400 font-medium mt-1">
+          <p className="text-[11px] sm:text-xs text-gray-400 font-medium mt-1">
             From cash on delivery
           </p>
         </div>
@@ -224,10 +222,10 @@ export default function Accounts() {
       {/* Main Table Card */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-2xs overflow-hidden">
         {/* Tabs */}
-        <div className="flex items-center gap-8 px-6 pt-4 border-b border-gray-100 overflow-x-auto text-sm">
+        <div className="flex items-center gap-4 sm:gap-8 px-4 sm:px-6 pt-3 sm:pt-4 border-b border-gray-100 overflow-x-auto text-xs sm:text-sm no-scrollbar">
           <button
             onClick={() => setActiveTab('TO_VERIFY')}
-            className={`pb-3 font-bold transition-all relative ${
+            className={`pb-3 font-bold whitespace-nowrap transition-all relative ${
               activeTab === 'TO_VERIFY'
                 ? 'text-gray-900 border-b-2 border-[#0E6C3B]'
                 : 'text-gray-500 hover:text-gray-800'
@@ -237,7 +235,7 @@ export default function Accounts() {
           </button>
           <button
             onClick={() => setActiveTab('VERIFIED')}
-            className={`pb-3 font-semibold transition-all relative ${
+            className={`pb-3 font-semibold whitespace-nowrap transition-all relative ${
               activeTab === 'VERIFIED'
                 ? 'text-gray-900 border-b-2 border-[#0E6C3B]'
                 : 'text-gray-500 hover:text-gray-800'
@@ -247,7 +245,7 @@ export default function Accounts() {
           </button>
           <button
             onClick={() => setActiveTab('REJECTED')}
-            className={`pb-3 font-semibold transition-all relative ${
+            className={`pb-3 font-semibold whitespace-nowrap transition-all relative ${
               activeTab === 'REJECTED'
                 ? 'text-gray-900 border-b-2 border-[#0E6C3B]'
                 : 'text-gray-500 hover:text-gray-800'
@@ -257,7 +255,7 @@ export default function Accounts() {
           </button>
           <button
             onClick={() => setActiveTab('ALL')}
-            className={`pb-3 font-semibold transition-all relative ${
+            className={`pb-3 font-semibold whitespace-nowrap transition-all relative ${
               activeTab === 'ALL'
                 ? 'text-gray-900 border-b-2 border-[#0E6C3B]'
                 : 'text-gray-500 hover:text-gray-800'
@@ -267,8 +265,104 @@ export default function Accounts() {
           </button>
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto">
+        {/* Mobile Cards List (< md screens) */}
+        <div className="block md:hidden divide-y divide-gray-100">
+          {displayedOrders.length === 0 ? (
+            <div className="p-8 text-center text-xs text-gray-400 font-medium">
+              {activeTab === 'TO_VERIFY'
+                ? 'No UPI payments waiting for verification. All clear!'
+                : activeTab === 'VERIFIED'
+                ? 'No verified payments found.'
+                : activeTab === 'REJECTED'
+                ? 'No rejected payments found.'
+                : 'No UPI transactions found.'}
+            </div>
+          ) : (
+            displayedOrders.map((o) => {
+              const isClosed = o.status === 'DELIVERED' || o.status === 'CANCELLED';
+              const utr = o.upiRef || o.paymentDetails?.utr || o.paymentDetails?.transactionId;
+              const paidWith = o.paidWith || o.paymentDetails?.app || o.paymentMethod || 'UPI';
+              const waiting = o.waitingText || formatWaiting(o.createdAt);
+              const isShortWait = o.isWaitingShort ?? (waiting.includes('min') || waiting.includes('h'));
+              const isPendingVerification = o.paymentStatus === 'AWAITING_CONFIRMATION' || o.paymentStatus === 'PENDING';
+
+              return (
+                <div
+                  key={o.id}
+                  onClick={() => handleRowClick(o)}
+                  className="p-4 hover:bg-gray-50/70 transition-colors cursor-pointer space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-gray-900 text-sm">#{o.orderNo || o.id?.slice(-4)}</span>
+                      {isClosed && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-gray-100 text-gray-500">
+                          Order closed
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-black text-gray-900 text-base">₹{Number(o.total || 0).toLocaleString('en-IN')}</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px] bg-gray-50/80 p-2.5 rounded-xl border border-gray-100">
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">Customer</span>
+                      <span className="font-semibold text-gray-800 truncate block">{o.userName || o.customerName || 'Customer'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">UTR Ref</span>
+                      <span className="font-mono font-medium text-gray-800 truncate block">
+                        {utr ? utr : <span className="text-red-500 font-semibold">Not entered</span>}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">Method</span>
+                      <span className="font-medium text-gray-600 block">{paidWith}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-400 block text-[10px]">Waiting</span>
+                      <span className={`font-bold ${isShortWait ? 'text-[#D97706]' : 'text-[#E03137]'}`}>
+                        {waiting}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-1 flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                    {isPendingVerification ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenReject(o, e)}
+                          className="flex-1 bg-white border border-red-200 text-[#E03137] hover:bg-red-50 font-bold text-xs py-2 px-3 rounded-xl transition-all"
+                        >
+                          Reject
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleVerify(o, e)}
+                          className="flex-1 bg-[#0E6C3B] hover:bg-[#09522C] text-white font-bold text-xs py-2 px-3 rounded-xl shadow-2xs transition-all"
+                        >
+                          Verify
+                        </button>
+                      </>
+                    ) : o.paymentStatus === 'PAID' ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-[#0E6C3B] bg-[#E7F4EB] px-3 py-1 rounded-lg">
+                        <CheckCircle2 size={13} /> Verified
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs font-bold text-[#E03137] bg-[#FDF2F2] px-3 py-1 rounded-lg">
+                        <XCircle size={13} /> Rejected
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Table (>= md screens) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-gray-100 bg-white">
@@ -366,14 +460,14 @@ export default function Accounts() {
                           <button
                             type="button"
                             onClick={(e) => handleVerify(o, e)}
-                            className="bg-[#0E6C3B] hover:bg-[#09522C] text-white font-bold text-xs px-4 py-1.5 rounded-lg shadow-2xs transition-all"
+                            className="bg-[#0E6C3B] hover:bg-[#09522C] text-white font-bold text-xs px-4 py-1.5 rounded-lg shadow-2xs transition-all cursor-pointer"
                           >
                             Verify
                           </button>
                           <button
                             type="button"
                             onClick={(e) => handleOpenReject(o, e)}
-                            className="bg-white border border-red-200 text-[#E03137] hover:bg-red-50 font-bold text-xs px-3.5 py-1.5 rounded-lg transition-all"
+                            className="bg-white border border-red-200 text-[#E03137] hover:bg-red-50 font-bold text-xs px-3.5 py-1.5 rounded-lg transition-all cursor-pointer"
                           >
                             Reject
                           </button>
@@ -398,8 +492,8 @@ export default function Accounts() {
 
       {/* Reject Modal */}
       {rejectOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-gray-100 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-xl border border-gray-100 space-y-4">
             <h3 className="text-lg font-bold text-gray-900">Reject Payment for #{rejectOrder.orderNo}</h3>
             <p className="text-xs text-gray-500">
               The order will be cancelled and the customer will be notified of the payment mismatch.

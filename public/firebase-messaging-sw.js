@@ -21,11 +21,12 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
   const { title, body } = payload.notification || {};
-  self.registration.showNotification(title || 'New order', {
+  self.registration.showNotification(title || 'MS Traders Alert', {
     body: body || '',
     icon: '/logo.png',
     badge: '/logo.png',
-    tag: payload.data?.orderId || 'ms-traders-order',
+    tag: payload.data?.orderId || payload.data?.productId || 'ms-traders-alert',
+    data: payload.data || {},
     // Makes this read like a real message/call alert (WhatsApp-style) instead of a quiet
     // background notification: vibrates the device, stays on screen until the admin
     // actually dismisses/taps it instead of auto-disappearing after a few seconds, and is
@@ -45,12 +46,17 @@ messaging.onBackgroundMessage((payload) => {
 // otherwise opens a new one — instead of doing nothing (the default).
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const notifType = event.notification.data?.type;
+  const targetPath = notifType === 'LOW_STOCK' || notifType === 'OUT_OF_STOCK' ? '/products' : '/orders';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if ('focus' in client) return client.focus();
+        if ('focus' in client) {
+          if ('navigate' in client && targetPath) client.navigate(targetPath);
+          return client.focus();
+        }
       }
-      if (clients.openWindow) return clients.openWindow('/orders');
+      if (clients.openWindow) return clients.openWindow(targetPath);
     })
   );
 });

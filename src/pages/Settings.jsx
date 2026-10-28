@@ -478,7 +478,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="p-6 lg:p-8 w-full max-w-7xl mx-auto space-y-6 animate-fade-in">
+    <div className="p-3.5 sm:p-6 lg:p-8 w-full max-w-7xl mx-auto space-y-4 sm:space-y-6 animate-fade-in">
       {/* Top Header */}
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">Settings</h1>
@@ -487,10 +487,10 @@ export default function Settings() {
         </p>
       </div>
 
-      {/* Two Column Layout: Left Pill Menu + Right Main Card */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Sub-navigation Pills */}
-        <div className="lg:col-span-3 space-y-1">
+      {/* Two Column Layout: Left Pill Menu (horizontal scroll on mobile) + Right Main Card */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
+        {/* Sub-navigation: Horizontal scroll on mobile (<lg), vertical sidebar on lg+ */}
+        <div className="lg:col-span-3 flex lg:flex-col overflow-x-auto no-scrollbar gap-1.5 pb-1 lg:pb-0 lg:space-y-1">
           {SETTINGS_SECTIONS.map((sec) => {
             const active = activeTab === sec.id;
             return (
@@ -498,10 +498,10 @@ export default function Settings() {
                 key={sec.id}
                 type="button"
                 onClick={() => setActiveTab(sec.id)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-[13px] font-medium transition-all ${
+                className={`flex items-center justify-between gap-2 px-3.5 py-2 lg:py-2.5 rounded-xl text-xs sm:text-[13px] font-medium transition-all whitespace-nowrap shrink-0 lg:shrink lg:w-full ${
                   active
                     ? 'bg-[#E6F4EA] text-[#0A7C47] font-semibold shadow-2xs'
-                    : 'text-gray-700 hover:bg-gray-100/70 hover:text-gray-900'
+                    : 'text-gray-700 bg-white lg:bg-transparent border border-gray-200/70 lg:border-transparent hover:bg-gray-100/70 hover:text-gray-900'
                 }`}
               >
                 <span>{sec.label}</span>
@@ -514,7 +514,7 @@ export default function Settings() {
         </div>
 
         {/* Right Settings Container Card */}
-        <div className="lg:col-span-9 bg-white rounded-2xl border border-gray-200/80 p-6 lg:p-8 shadow-2xs min-h-[520px] flex flex-col justify-between">
+        <div className="lg:col-span-9 bg-white rounded-2xl border border-gray-200/80 p-4 sm:p-6 lg:p-8 shadow-2xs min-h-[420px] lg:min-h-[520px] flex flex-col justify-between">
           <div>
             {/* TAB 1: Store & hours */}
             {activeTab === 'store-hours' && (
@@ -1137,8 +1137,8 @@ export default function Settings() {
                   </button>
                 </div>
 
-                {/* Staff Table matching Screenshot 3 */}
-                <div className="overflow-x-auto">
+                {/* Staff Table - Desktop */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-gray-100 text-gray-500">
@@ -1211,6 +1211,58 @@ export default function Settings() {
                       )}
                     </tbody>
                   </table>
+                </div>
+
+                {/* Staff Cards - Mobile */}
+                <div className="block md:hidden space-y-2.5">
+                  {staffList.length === 0 ? (
+                    <div className="py-8 text-center text-gray-400 text-xs bg-gray-50/60 rounded-xl border border-gray-100">
+                      No staff members added yet.
+                    </div>
+                  ) : (
+                    staffList.map((st) => {
+                      let roleBadge = 'bg-[#E6F4EA] text-[#0A7C47]';
+                      if (st.role === 'Manager') roleBadge = 'bg-[#E8F0FE] text-[#1A73E8]';
+                      else if (st.role === 'Packer') roleBadge = 'bg-[#FEF7E0] text-[#B06000]';
+                      else if (st.role === 'Delivery') roleBadge = 'bg-[#F3E8FD] text-[#7E22CE]';
+                      else if (st.role === 'Cashier') roleBadge = 'bg-[#E0F2FE] text-[#0369A1]';
+
+                      return (
+                        <div
+                          key={st.id}
+                          className="p-3.5 rounded-xl border border-gray-200/80 bg-white space-y-2.5 shadow-2xs"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="font-bold text-gray-900 text-sm">{st.name}</div>
+                              <div className="text-xs text-gray-500 mt-0.5">{st.email}</div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold ${roleBadge}`}
+                              >
+                                {st.role}
+                              </span>
+                              {!st.isOwner && st.role !== 'Owner' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteStaff(st.id, st)}
+                                  className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                                  title="Remove staff member"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="pt-2 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
+                            <div>Access: <span className="text-gray-700 font-medium">{st.canAccess || 'Standard access'}</span></div>
+                            <div>Active: <span className="text-gray-700 font-medium">{st.lastActive || 'Today'}</span></div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
 
                 {/* Checkbox: Require a one-time code at sign-in for Owner and Manager */}
@@ -1375,11 +1427,11 @@ export default function Settings() {
           </div>
 
           {/* Bottom Actions: Discard & Save changes buttons across all tabs */}
-          <div className="pt-6 mt-6 flex items-center justify-end gap-3 border-t border-gray-100">
+          <div className="pt-6 mt-6 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2.5 sm:gap-3 border-t border-gray-100">
             <button
               type="button"
               onClick={handleDiscard}
-              className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors shadow-2xs"
+              className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors shadow-2xs text-center"
             >
               Discard
             </button>
@@ -1387,7 +1439,7 @@ export default function Settings() {
               type="button"
               onClick={handleSaveAll}
               disabled={saving}
-              className="px-5 py-2 rounded-xl bg-[#056B38] hover:bg-[#04552C] active:bg-[#034423] text-white text-xs font-semibold transition-colors shadow-2xs disabled:opacity-50"
+              className="w-full sm:w-auto px-5 py-2.5 sm:py-2 rounded-xl bg-[#056B38] hover:bg-[#04552C] active:bg-[#034423] text-white text-xs font-semibold transition-colors shadow-2xs disabled:opacity-50 text-center"
             >
               {saving ? 'Saving…' : 'Save changes'}
             </button>

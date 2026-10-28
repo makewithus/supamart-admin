@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Send, Smartphone, Bell, Clock, CheckCircle2, Users, AlertCircle, Sparkles } from 'lucide-react';
 import { db } from '../config/firebase';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, getDocs, limit } from 'firebase/firestore';
 import { apiPost, apiGet } from '../services/api';
 import toast from 'react-hot-toast';
 import { playNotificationSound, getAudioContext } from '../utils/notificationSound';
@@ -30,22 +30,22 @@ export default function PushNotifications() {
   const [sending, setSending] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  // Subscribe in real-time to users to compute actual reachable token counts
+  // Fetch users once on mount to compute actual reachable token counts (no continuous listener)
   useEffect(() => {
-    try {
-      const unsub = onSnapshot(collection(db, 'users'), (snap) => {
+    let active = true;
+    getDocs(collection(db, 'users'))
+      .then((snap) => {
+        if (!active) return;
         setUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      });
-      return () => unsub();
-    } catch (e) {
-      console.error('Error listening to users:', e);
-    }
+      })
+      .catch((e) => console.error('Error loading users:', e));
+    return () => { active = false; };
   }, []);
 
-  // Subscribe in real-time to broadcasts collection to display actual sent notifications
+  // Subscribe to recent broadcasts to display actual sent notifications
   useEffect(() => {
     try {
-      const q = query(collection(db, 'broadcasts'), orderBy('createdAt', 'desc'));
+      const q = query(collection(db, 'broadcasts'), orderBy('createdAt', 'desc'), limit(20));
       const unsub = onSnapshot(
         q,
         (snap) => {
@@ -159,7 +159,7 @@ export default function PushNotifications() {
   };
 
   return (
-    <div className="p-6 lg:p-8 w-full space-y-6 animate-fade-in">
+    <div className="p-3.5 sm:p-6 lg:p-8 w-full space-y-4 sm:space-y-6 animate-fade-in">
       {/* Page Header */}
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">Push notifications</h1>
@@ -171,7 +171,7 @@ export default function PushNotifications() {
       {/* Main Grid: Form (left) & Mobile Preview (right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Form Card */}
-        <div className="lg:col-span-8 bg-white rounded-2xl border border-gray-200/80 p-6 shadow-2xs">
+        <div className="lg:col-span-8 bg-white rounded-2xl border border-gray-200/80 p-4 sm:p-6 shadow-2xs">
           <form onSubmit={handleSendNotification} className="space-y-4">
             {/* Title */}
             <div>
@@ -273,19 +273,19 @@ export default function PushNotifications() {
             </div>
 
             {/* Action Buttons */}
-            <div className="pt-4 flex items-center justify-end gap-3">
+            <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2.5 sm:gap-3">
               <button
                 type="button"
                 onClick={handleSendTest}
                 disabled={testing}
-                className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors shadow-2xs cursor-pointer"
+                className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors shadow-2xs cursor-pointer text-center"
               >
                 {testing ? 'Sending test…' : 'Send test to my phone'}
               </button>
               <button
                 type="submit"
                 disabled={sending}
-                className="px-5 py-2 rounded-xl bg-[#056B38] hover:bg-[#04552C] active:bg-[#034423] text-white text-xs font-semibold transition-colors shadow-2xs disabled:opacity-50 cursor-pointer"
+                className="px-5 py-2 rounded-xl bg-[#056B38] hover:bg-[#04552C] active:bg-[#034423] text-white text-xs font-semibold transition-colors shadow-2xs disabled:opacity-50 cursor-pointer text-center"
               >
                 {sending ? 'Broadcasting…' : 'Send notification'}
               </button>
@@ -326,8 +326,8 @@ export default function PushNotifications() {
           <span className="text-xs text-gray-400 font-medium">{sentList.length} total broadcasts</span>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-200/80 overflow-hidden shadow-2xs">
-          <div className="overflow-x-auto">
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-gray-100 bg-[#FAFAFA]">
@@ -380,8 +380,34 @@ export default function PushNotifications() {
               </tbody>
             </table>
           </div>
+
+          {/* Mobile Broadcast Cards (smaller screens) */}
+          <div className="block md:hidden divide-y divide-gray-100">
+            {sentList.length === 0 ? (
+              <div className="py-8 text-center text-gray-400 text-xs font-semibold">
+                No broadcast notifications sent yet.
+              </div>
+            ) : (
+              sentList.map((item) => (
+                <div key={item.id} className="p-4 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="font-bold text-sm text-gray-900">{item.title}</h3>
+                      <p className="text-xs text-gray-500 mt-0.5 leading-snug">{item.body}</p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 shrink-0">
+                      {item.delivered || 0} devices
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1">
+                    <span>{item.audience || 'All customers'} · {item.targetScreen || 'Home'}</span>
+                    <span>{formatSentDate(item.createdAt)}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
-    </div>
   );
 }

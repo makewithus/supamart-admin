@@ -4,7 +4,7 @@ import {
   ChevronRight, Download, Package, ShoppingBag, Clock
 } from 'lucide-react';
 import { auth, db } from '../config/firebase';
-import { collection, query, orderBy, onSnapshot, doc } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, doc } from 'firebase/firestore';
 import { useBadges } from '../context/BadgeContext';
 import productImages from '../utils/productImages';
 import { apiGet } from '../services/api';
@@ -110,13 +110,10 @@ export default function Dashboard() {
     setLoading(false);
   };
 
-  // Subscribe to real-time orders with robust API fallback
+  // Subscribe to real-time orders with robust API fallback on error
   useEffect(() => {
-    fetchOrdersFromApi();
-    const interval = setInterval(fetchOrdersFromApi, 10000);
-
     try {
-      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(30));
       const unsub = onSnapshot(
         q,
         (snap) => {
@@ -129,7 +126,6 @@ export default function Dashboard() {
         }
       );
       return () => {
-        clearInterval(interval);
         unsub();
       };
     } catch (_) {
@@ -140,7 +136,8 @@ export default function Dashboard() {
   // Subscribe to real-time issues
   useEffect(() => {
     try {
-      const unsub = onSnapshot(collection(db, 'issues'), (snap) => {
+      const q = query(collection(db, 'issues'), orderBy('createdAt', 'desc'), limit(20));
+      const unsub = onSnapshot(q, (snap) => {
         setIssues(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       }, () => {});
       return () => unsub();
@@ -466,7 +463,7 @@ export default function Dashboard() {
   }, [orders, startOf7DaysAgo]);
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 w-full animate-fade-in">
+    <div className="p-3.5 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 w-full animate-fade-in">
       {/* ── Greeting Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -608,7 +605,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Metric Summary Cards Row ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Metric 1 */}
         <div className="bg-white rounded-2xl border border-gray-200/80 p-4 shadow-2xs flex flex-col justify-between">
           <p className="text-xs font-bold text-gray-500">Revenue · {timeRange}</p>
@@ -826,7 +823,8 @@ export default function Dashboard() {
             </button>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Recent Orders - Desktop Table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider text-gray-400">
@@ -910,6 +908,94 @@ export default function Dashboard() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Recent Orders - Mobile Cards */}
+          <div className="block md:hidden space-y-2.5">
+            {recentOrdersList.length === 0 ? (
+              <div className="py-8 text-center text-gray-400 text-xs font-medium bg-gray-50/60 rounded-xl border border-gray-100">
+                No recent orders placed yet.
+              </div>
+            ) : (
+              recentOrdersList.map((order) => (
+                <div
+                  key={order.id}
+                  onClick={() => navigate('/orders', { state: { openOrderId: order.id } })}
+                  className="p-3.5 rounded-xl border border-gray-200/80 bg-white shadow-2xs hover:border-gray-300 transition-all cursor-pointer space-y-2.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono font-bold text-gray-900 text-xs sm:text-sm">
+                      {order.displayId}
+                    </span>
+                    <span className="text-sm font-black text-gray-900">
+                      ₹{order.total}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-gray-800 truncate mr-2">
+                      {order.customer}
+                    </span>
+                    <span className="text-[11px] text-gray-400 font-medium shrink-0">
+                      {order.placed}
+                    </span>
+                  </div>
+
+                  <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-2">
+                    <div>
+                      {order.paymentType === 'verify' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
+                          Verify UTR
+                        </span>
+                      )}
+                      {order.paymentType === 'paid' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                          {order.paymentText}
+                        </span>
+                      )}
+                      {order.paymentType === 'cod' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-100 text-gray-700 border border-gray-200/60">
+                          {order.paymentText}
+                        </span>
+                      )}
+                      {order.paymentType === 'failed' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200/60">
+                          Failed
+                        </span>
+                      )}
+                      {order.paymentType === 'pending' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200/60">
+                          Pending
+                        </span>
+                      )}
+                    </div>
+
+                    <div>
+                      {order.statusType === 'new' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-600">
+                          New
+                        </span>
+                      )}
+                      {order.statusType === 'packing' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700">
+                          {order.status}
+                        </span>
+                      )}
+                      {order.statusType === 'paid' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700">
+                          {order.status}
+                        </span>
+                      )}
+                      {order.statusType === 'cancelled' && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-100 text-gray-500">
+                          Cancelled
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 

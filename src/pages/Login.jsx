@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
-import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import {
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+} from 'firebase/auth';
 import { AlertCircle } from 'lucide-react';
 import { auth } from '../config/firebase';
 import toast from 'react-hot-toast';
@@ -17,12 +23,27 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      // Stamp session with build id so stale deployments don't linger
+      // Set persistence based on "Keep me signed in" checkbox
+      try {
+        await setPersistence(
+          auth,
+          keepSignedIn ? browserLocalPersistence : browserSessionPersistence
+        );
+      } catch (pErr) {
+        console.warn('Could not set persistence:', pErr);
+      }
+
+      // Mark this session as a fresh login and stamp activity so idle timeout / build ID checks
+      // don't immediately bounce the user back to the login screen
+      sessionStorage.setItem('ms_admin_just_logged_in', '1');
+      localStorage.setItem('ms_admin_last_activity', String(Date.now()));
       if (typeof __BUILD_ID__ !== 'undefined') {
         localStorage.setItem('ms_admin_build_id', __BUILD_ID__);
       }
-      await signInWithEmailAndPassword(auth, email, password);
+
+      await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (err) {
+      sessionStorage.removeItem('ms_admin_just_logged_in');
       const msgs = {
         'auth/invalid-credential': 'Incorrect email or password.',
         'auth/user-not-found': 'No account found for this email.',
