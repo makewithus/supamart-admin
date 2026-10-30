@@ -41,7 +41,7 @@ export default function useLowStockAlert(enabled, onLowStockAlert) {
           if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             try {
               new Notification(
-                isOutOfStock ? `🚨 Out of Stock: ${alert.productName}` : `⚠️ Low Stock Alert: ${alert.productName}`,
+                isOutOfStock ? `Out of Stock: ${alert.productName}` : `Low Stock Alert: ${alert.productName}`,
                 {
                   body: isOutOfStock
                     ? `${alert.productName}${alert.variantLabel ? ` (${alert.variantLabel})` : ''} reached 0 units${alert.orderNo ? ` on order #${alert.orderNo}` : ''}!`
@@ -62,7 +62,6 @@ export default function useLowStockAlert(enabled, onLowStockAlert) {
               : `Low stock alert: ${alert.productName} has only ${stockCount} remaining!`,
             {
               duration: 5000,
-              icon: isOutOfStock ? '🚨' : '⚠️',
             }
           );
         });
@@ -71,7 +70,11 @@ export default function useLowStockAlert(enabled, onLowStockAlert) {
           onLowStockAlert?.(latestAlert);
         }
       },
-      (err) => console.error('useLowStockAlert: Firestore listener failed', err)
+      (err) => {
+        if (err?.code !== 'permission-denied') {
+          console.warn('useLowStockAlert: listener paused', err?.message || err);
+        }
+      }
     );
 
     return () => unsub();

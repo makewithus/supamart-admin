@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, Printer, Phone, MessageSquare, Check,
-  CheckCircle2, XCircle, AlertCircle, Clock, Send
+  CheckCircle2, XCircle, AlertCircle, Clock, Send,
+  Truck, Star
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { apiPatch } from '../services/api';
@@ -52,10 +53,12 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
     if (activeOrderData?.delayReason) {
       setDelayReasonText(activeOrderData.delayReason);
     }
-    if (activeOrderData?.deliveryDelay?.newEstimatedTime) {
+    if (activeOrderData?.deliveryDelay?.reportedDelayMinutes) {
+      setDelayMins(`+${activeOrderData.deliveryDelay.reportedDelayMinutes} mins`);
+    } else if (activeOrderData?.deliveryDelay?.newEstimatedTime) {
       setDelayMins(activeOrderData.deliveryDelay.newEstimatedTime);
     }
-  }, [activeOrderData?.delayReason, activeOrderData?.deliveryDelay?.newEstimatedTime]);
+  }, [activeOrderData?.delayReason, activeOrderData?.deliveryDelay?.newEstimatedTime, activeOrderData?.deliveryDelay?.reportedDelayMinutes]);
 
   // Subscribe to live order updates in real-time
   useEffect(() => {
@@ -108,12 +111,7 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
   })();
   const instructions = formatDeliveryInstructions(activeOrderData.deliveryInstructions || activeOrderData.instructions || activeOrderData.notes);
   const placedTime = activeOrderData.placed || (activeOrderData.createdAt ? new Date(activeOrderData.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '');
-  const paymentMethod = typeof activeOrderData.paymentMethod === 'string' ? activeOrderData.paymentMethod : 'UPI';
-  const utr = (typeof activeOrderData.paymentDetails?.utr === 'string' ? activeOrderData.paymentDetails.utr : null)
-    || (typeof activeOrderData.utr === 'string' ? activeOrderData.utr : null)
-    || (typeof activeOrderData.upiRef === 'string' ? activeOrderData.upiRef : null)
-    || '—';
-  const paymentStatus = activeOrderData.paymentStatus || 'AWAITING_CONFIRMATION';
+  const canReviewPayment = !['PAID', 'FAILED'].includes(String(activeOrderData.paymentStatus || '').toUpperCase());
 
   const displayItems = Array.isArray(activeOrderData.items) ? activeOrderData.items : [];
 
@@ -136,6 +134,11 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
 
   const handleAssignPartnerModal = async (partnerId) => {
     if (!partnerId) return;
+    const rawStatus = (activeOrderData.status || order.status || '').toUpperCase();
+    if (rawStatus === 'ORDER_PLACED' || rawStatus === 'NEW' || rawStatus === 'PLACED' || !rawStatus) {
+      toast.error('Please accept and confirm the order before assigning a delivery partner.');
+      return;
+    }
     const target = partners.find((p) => p.id === partnerId);
     if (target && (target.isOnDuty === false || target.isActive === false)) {
       toast.error(`${target.name} is currently OFF DUTY and cannot be assigned`);
@@ -202,13 +205,13 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
     }
   };
 
-  const handleVerifyUTR = async () => {
+  const handleVerifyPayment = async () => {
     setLoading(true);
     try {
       if (order.id && !order.id.startsWith('#')) {
         await apiPatch(`/orders/${order.id}/mark-paid`);
       }
-      toast.success('Amount and UTR verified! Payment marked as PAID.');
+      toast.success('Payment verified and marked as PAID.');
       onSuccess?.();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed to verify payment');
@@ -217,12 +220,12 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
     }
   };
 
-  const handleRejectUTR = async () => {
-    if (!window.confirm('Reject this payment proof?')) return;
+  const handleRejectPayment = async () => {
+    if (!window.confirm('Reject this payment?')) return;
     setLoading(true);
     try {
       if (order.id && !order.id.startsWith('#')) {
-        await apiPatch(`/orders/${order.id}/reject-payment`, { reason: 'UTR mismatch or amount not credited' });
+        await apiPatch(`/orders/${order.id}/reject-payment`, { reason: 'Payment not received' });
       }
       toast.success('Payment rejected');
       onSuccess?.();
@@ -248,12 +251,20 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
     setSubmittingDelay(true);
     try {
       if (order.id && !order.id.startsWith('#')) {
-        await apiPatch(`/orders/${order.id}/delivery-delay`, {
+        const result = await apiPatch(`/orders/${order.id}/delivery-delay`, {
           newEstimatedTime: delayMins.trim(),
           delayReason: finalReason,
         });
+        if (result.emailStatus === 'PENDING' || result.emailQueued) {
+          toast.success('Delay saved. The customer email is queued for immediate delivery.');
+        } else if (result.emailSent === false) {
+          toast.error(`Delay saved, but the customer email was not sent. ${result.emailError || 'Check the backend email settings.'}`);
+        } else {
+          toast.success('Delivery delay updated and customer email sent.');
+        }
+      } else {
+        toast.error('The customer email cannot be sent for a local or incomplete order.');
       }
-      toast.success('Delivery delay updated & notification email sent to customer!');
       setDelayOpen(false);
       onSuccess?.();
     } catch (err) {
@@ -359,7 +370,7 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                 <div className="flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs font-black text-amber-950">
-                      ⚠️ Delivery Delayed by {activeOrderData.deliveryDelay?.reportedBy || (activeOrderData.delayReportedByAdmin ? 'Store Admin' : 'Delivery Partner')}
+                      Delivery Delayed by {activeOrderData.deliveryDelay?.reportedBy || (activeOrderData.delayReportedByAdmin ? 'Store Admin' : 'Delivery Partner')}
                     </p>
                     <span className="text-[10px] font-extrabold px-2 py-0.5 bg-amber-200 text-amber-900 rounded-md shrink-0">
                       New ETA: {activeOrderData.deliveryDelay?.newEstimatedTime || 'Delayed'}
@@ -497,17 +508,21 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
           {/* Customer Confirmation & Rating Status Banner */}
           {(activeOrderData.confirmedAt || activeOrderData.status === 'DELIVERED') && (
             <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center justify-between shadow-2xs">
-              <div>
-                <p className="text-xs font-black text-emerald-950">
-                  ✓ Order Collected & Confirmed by Customer
-                </p>
-                <p className="text-[11px] text-emerald-700 font-medium mt-0.5">
-                  Verified receipt via mobile app
-                </p>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+                <div>
+                  <p className="text-xs font-black text-emerald-950">
+                    Order Collected & Confirmed by Customer
+                  </p>
+                  <p className="text-[11px] text-emerald-700 font-medium mt-0.5">
+                    Verified receipt via mobile app
+                  </p>
+                </div>
               </div>
               {(activeOrderData.orderRating || activeOrderData.rating) && (
-                <span className="px-2.5 py-1 bg-[#0A7C47] text-white rounded-lg text-xs font-black shadow-2xs">
-                  ★ {activeOrderData.orderRating || activeOrderData.rating}/5
+                <span className="px-2.5 py-1 bg-[#0A7C47] text-white rounded-lg text-xs font-black shadow-2xs flex items-center gap-1">
+                  <Star size={12} className="fill-white text-white" />
+                  <span>{activeOrderData.orderRating || activeOrderData.rating}/5</span>
                 </span>
               )}
             </div>
@@ -532,17 +547,32 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                     <span>Accepted</span>
                   </div>
                   <button
-                    onClick={() => handleUpdateStatus('OUT_FOR_DELIVERY', `Order ${orderNo} dispatched - Out for Delivery!`)}
+                    onClick={() => {
+                      const hasPartner = Boolean(
+                        activeOrderData.assignedPartnerId ||
+                        activeOrderData.deliveryBoyId ||
+                        activeOrderData.deliveryPartner?.id ||
+                        activeOrderData.deliveryBoyName ||
+                        activeOrderData.deliveryPartner?.name
+                      );
+                      if (!hasPartner) {
+                        toast.error('Please assign a delivery partner before marking Out for Delivery!');
+                        return;
+                      }
+                      handleUpdateStatus('OUT_FOR_DELIVERY', `Order ${orderNo} dispatched - Out for Delivery!`);
+                    }}
                     disabled={loading}
                     className="flex-1 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5"
                   >
-                    <span>🚀 Out for delivery</span>
+                    <Truck size={16} strokeWidth={2.4} />
+                    <span>Out for delivery</span>
                   </button>
                 </>
               ) : activeOrderData.status === 'OUT_FOR_DELIVERY' ? (
                 <>
                   <div className="py-2.5 px-3 bg-cyan-50 border border-cyan-200/80 text-cyan-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
-                    <span>🚀 On the way</span>
+                    <Truck size={16} className="text-cyan-600" strokeWidth={2.4} />
+                    <span>On the way</span>
                   </div>
                   <button
                     onClick={() => handleUpdateStatus('DELIVERED', `Order ${orderNo} marked as Delivered!`)}
@@ -687,47 +717,32 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
             </div>
           </div>
 
-          {/* PAYMENT Section */}
-          <div className="space-y-2.5">
+          {/* Only show review actions while payment still needs a decision. */}
+          {canReviewPayment && <div className="space-y-2.5">
             <p className="text-[11px] font-extrabold uppercase tracking-wider text-gray-400">
               PAYMENT
             </p>
 
-            <div className="p-3.5 bg-white border border-gray-200/80 rounded-xl flex items-center justify-between">
-              <div>
-                <p className="text-xs font-extrabold text-gray-900">
-                  {paymentMethod}
-                </p>
-                <p className="text-[11px] font-mono text-gray-400 mt-0.5">
-                  UTR {utr}
-                </p>
-              </div>
-
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
-                Verify UTR
-              </span>
-            </div>
-
             {/* Payment verification action buttons */}
             <div className="flex items-center gap-2.5">
               <button
-                onClick={handleVerifyUTR}
+                onClick={handleVerifyPayment}
                 disabled={loading}
                 className="flex-1 py-2.5 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors text-center"
               >
-                Amount and UTR match · Verify
+                Verify
               </button>
 
               <button
-                onClick={handleRejectUTR}
+                onClick={handleRejectPayment}
                 disabled={loading}
                 className="px-4 py-2.5 border border-rose-300 text-rose-600 hover:bg-rose-50 font-bold text-xs rounded-xl transition-colors"
               >
                 Reject
               </button>
             </div>
+          </div>}
 
-            {/* Partner Assignment in Payment Verification Section */}
             <div className="mt-4 pt-3 border-t border-gray-100 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-gray-800">
@@ -750,36 +765,49 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                 )}
               </div>
 
-              <select
-                disabled={assigningPartner || activeOrderData.status === 'DELIVERED'}
-                value={activeOrderData.deliveryAcceptanceStatus === 'REJECTED' ? '' : (activeOrderData.assignedPartnerId || '')}
-                onChange={(e) => handleAssignPartnerModal(e.target.value)}
-                className={`w-full px-3 py-2 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-600 focus:bg-white cursor-pointer shadow-2xs border ${
-                  activeOrderData.deliveryAcceptanceStatus === 'REJECTED'
-                    ? 'border-rose-300 bg-rose-50 text-rose-900 font-bold'
-                    : 'border-gray-200 bg-gray-50 text-gray-800'
-                }`}
-              >
-                <option value="">
-                  {activeOrderData.deliveryAcceptanceStatus === 'REJECTED'
-                    ? '⚠️ Rejected — Re-assign new partner...'
-                    : activeOrderData.assignedPartnerId
-                    ? 'Re-assign partner...'
-                    : 'Select on-duty partner...'}
-                </option>
-                {partners.map((p) => {
-                  const isOffDuty = p.isOnDuty === false || p.isActive === false;
-                  return (
-                    <option key={p.id} value={p.id} disabled={isOffDuty}>
-                      {p.name} · {p.mobile || p.phone || ''} {isOffDuty ? '(OFF DUTY)' : '(ON DUTY)'}
+              {(() => {
+                const s = (activeOrderData.status || order.status || '').toUpperCase();
+                const isOrderNew = s === 'ORDER_PLACED' || s === 'NEW' || s === 'PLACED' || !s;
+
+                return (
+                  <select
+                    disabled={assigningPartner || isOrderNew || activeOrderData.status === 'DELIVERED'}
+                    title={isOrderNew ? 'Accept / approve order first before assigning partner' : ''}
+                    value={activeOrderData.deliveryAcceptanceStatus === 'REJECTED' ? '' : (activeOrderData.assignedPartnerId || '')}
+                    onChange={(e) => handleAssignPartnerModal(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-600 focus:bg-white shadow-2xs border ${
+                      isOrderNew
+                        ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-75'
+                        : activeOrderData.deliveryAcceptanceStatus === 'REJECTED'
+                        ? 'border-rose-300 bg-rose-50 text-rose-900 font-bold cursor-pointer'
+                        : 'border-gray-200 bg-gray-50 text-gray-800 cursor-pointer'
+                    }`}
+                  >
+                    <option value="">
+                      {isOrderNew
+                        ? 'Approve order first to assign partner...'
+                        : activeOrderData.deliveryAcceptanceStatus === 'REJECTED'
+                        ? 'Rejected — Re-assign new partner...'
+                        : activeOrderData.assignedPartnerId
+                        ? 'Re-assign partner...'
+                        : 'Select on-duty partner...'}
                     </option>
-                  );
-                })}
-              </select>
+                    {partners.map((p) => {
+                      const isOffDuty = p.isOnDuty === false || p.isActive === false;
+                      return (
+                        <option key={p.id} value={p.id} disabled={isOffDuty}>
+                          {p.name} · {p.mobile || p.phone || ''} {isOffDuty ? '(OFF DUTY)' : '(ON DUTY)'}
+                        </option>
+                      );
+                    })}
+                  </select>
+                );
+              })()}
 
               {activeOrderData.deliveryAcceptanceStatus === 'REJECTED' ? (
-                <p className="text-[11px] text-rose-700 font-semibold">
-                  ⚠️ Previous assignment was rejected by {activeOrderData.rejectedByPartnerName || activeOrderData.deliveryBoyName || 'partner'}. Select an on-duty partner to re-assign.
+                <p className="text-[11px] text-rose-700 font-semibold flex items-center gap-1.5">
+                  <AlertCircle size={14} className="text-rose-600 shrink-0 inline" />
+                  <span>Previous assignment was rejected by {activeOrderData.rejectedByPartnerName || activeOrderData.deliveryBoyName || 'partner'}. Select an on-duty partner to re-assign.</span>
                 </p>
               ) : activeOrderData.deliveryBoyName ? (
                 <p className="text-[11px] text-gray-500 font-medium">
@@ -803,8 +831,7 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
             />
           </div>
         </div>
-      </div>
-    </div>,
+      </div>,
     document.body
   );
 }

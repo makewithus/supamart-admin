@@ -22,7 +22,7 @@ async function request(method, path, body, options = {}) {
       url: `${BASE}${path}`,
       data: isFormData ? body : (body ? body : undefined),
       headers,
-      timeout: 120_000,            // 2 min — enough for Cloudinary upload via backend
+      timeout: options.timeout ?? 120_000, // Longer only for upload requests that need it
       maxBodyLength: 100 * 1024 * 1024,    // 100 MB
       maxContentLength: 100 * 1024 * 1024, // 100 MB
       onUploadProgress: options.onUploadProgress

@@ -84,7 +84,7 @@ export default function PushNotifications() {
 
     return {
       totalUsers: users.length,
-      totalReachable: totalReachable || users.length, // Display actual reachable tokens
+      totalReachable,
       msClubReachable,
       newUsersReachable,
     };
@@ -113,7 +113,7 @@ export default function PushNotifications() {
         body: message.trim(),
         audience: audienceLabel,
         targetScreen: opens,
-      });
+      }, { timeout: 45_000 });
 
       try {
         getAudioContext()?.resume();
@@ -123,8 +123,10 @@ export default function PushNotifications() {
       toast.success(
         res.sent > 0
           ? `Push notification sent to ${res.sent} registered devices!`
-          : 'Notification saved and broadcast dispatched successfully!'
+          : 'Saved to customer in-app inboxes. No mobile push tokens are registered yet.'
       );
+      setTitle('');
+      setMessage('');
     } catch (err) {
       console.error(err);
       toast.error(err.message || 'Failed to broadcast notification');
@@ -150,7 +152,7 @@ export default function PushNotifications() {
           });
         }
       }
-      toast.success('Test notification triggered on your device!');
+      toast.success('Test notification triggered in this browser.');
     } catch (err) {
       toast.error('Could not display test notification: ' + err.message);
     } finally {
@@ -280,7 +282,7 @@ export default function PushNotifications() {
                 disabled={testing}
                 className="px-4 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 active:bg-gray-100 transition-colors shadow-2xs cursor-pointer text-center"
               >
-                {testing ? 'Sending test…' : 'Send test to my phone'}
+                {testing ? 'Sending test…' : 'Send test to this browser'}
               </button>
               <button
                 type="submit"

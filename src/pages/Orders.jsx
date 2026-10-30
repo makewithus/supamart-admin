@@ -160,6 +160,11 @@ function mapOrderDoc(id, data) {
 
   const handleAssignPartner = async (orderId, partnerId) => {
     if (!partnerId) return;
+    const targetOrder = orders.find((o) => o.id === orderId);
+    if (targetOrder && targetOrder.statusKey === 'NEW') {
+      toast.error('Please accept and confirm the order before assigning a delivery partner.');
+      return;
+    }
     const target = partners.find((p) => p.id === partnerId);
     if (target && (target.isOnDuty === false || target.isActive === false)) {
       toast.error(`${target.name} is currently OFF DUTY and cannot be assigned`);
@@ -684,17 +689,23 @@ function mapOrderDoc(id, data) {
                             </div>
 
                             <select
+                              disabled={o.statusKey === 'NEW'}
+                              title={o.statusKey === 'NEW' ? 'Accept / approve order first before assigning partner' : ''}
                               value={o.deliveryAcceptanceStatus === 'REJECTED' ? '' : (o.assignedPartnerId || '')}
                               onChange={(e) => handleAssignPartner(o.id, e.target.value)}
-                              className={`text-[11px] font-semibold py-1 px-1.5 rounded-lg focus:outline-none focus:border-emerald-600 focus:bg-white cursor-pointer shadow-2xs border ${
-                                o.deliveryAcceptanceStatus === 'REJECTED'
-                                  ? 'bg-rose-50 border-rose-300 text-rose-900 font-bold'
-                                  : 'bg-gray-50 border-gray-200 text-gray-700'
+                              className={`text-[11px] font-semibold py-1 px-1.5 rounded-lg focus:outline-none focus:border-emerald-600 focus:bg-white shadow-2xs border ${
+                                o.statusKey === 'NEW'
+                                  ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-75'
+                                  : o.deliveryAcceptanceStatus === 'REJECTED'
+                                  ? 'bg-rose-50 border-rose-300 text-rose-900 font-bold cursor-pointer'
+                                  : 'bg-gray-50 border-gray-200 text-gray-700 cursor-pointer'
                               }`}
                             >
                               <option value="">
-                                {o.deliveryAcceptanceStatus === 'REJECTED'
-                                  ? '⚠️ Re-assign new partner...'
+                                {o.statusKey === 'NEW'
+                                  ? 'Approve order first...'
+                                  : o.deliveryAcceptanceStatus === 'REJECTED'
+                                  ? 'Re-assign new partner...'
                                   : o.assignedPartnerId
                                   ? 'Re-assign partner...'
                                   : 'Assign partner...'}

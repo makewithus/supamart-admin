@@ -4,7 +4,7 @@ import {
   X, UserPlus, Clock, ExternalLink, Star, AlertCircle, AlertTriangle
 } from 'lucide-react';
 import { db } from '../config/firebase';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { apiPost, apiPatch } from '../services/api';
 import toast from 'react-hot-toast';
 import { formatDeliveryInstructions, formatAddress } from '../utils/orderUtils';
@@ -61,7 +61,7 @@ export default function DeliveryPartners() {
   // Subscribe in real-time to recent orders to calculate dynamic live metrics
   useEffect(() => {
     try {
-      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(50));
+      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(150));
       const unsub = onSnapshot(q, (snap) => {
         setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       });
@@ -74,12 +74,26 @@ export default function DeliveryPartners() {
   // Map partners with live activity, counts, and duty status strictly from DB
   const partners = useMemo(() => {
     return (rawPartners || []).filter(Boolean).map((p) => {
-      const pOrders = (orders || []).filter((o) => o && o.assignedPartnerId === p.id);
-      const activeOrders = pOrders.filter(
-        (o) =>
-          (o.status === 'OUT_FOR_DELIVERY' || o.status === 'ORDER_ACCEPTED' || o.status === 'PENDING_CONFIRMATION') &&
-          o.deliveryAcceptanceStatus !== 'REJECTED'
-      );
+      const targetId = String(p.id || '');
+      const pOrders = (orders || []).filter((o) => {
+        if (!o) return false;
+        const oPartnerId = String(o.assignedPartnerId || o.deliveryBoyId || o.deliveryPartner?.id || '');
+        return oPartnerId === targetId;
+      });
+
+      const activeOrders = pOrders.filter((o) => {
+        const s = (o.status || '').toUpperCase();
+        const acceptance = (o.deliveryAcceptanceStatus || '').toUpperCase();
+        if (s === 'DELIVERED' || s === 'CANCELLED' || acceptance === 'REJECTED') return false;
+        return (
+          acceptance === 'ACCEPTED' ||
+          s === 'OUT_FOR_DELIVERY' ||
+          s === 'ORDER_ACCEPTED' ||
+          s === 'PENDING_CONFIRMATION' ||
+          s === 'PACKING'
+        );
+      });
+
       const deliveredOrders = pOrders.filter((o) => o.status === 'DELIVERED');
       const deliveredTodayCount = deliveredOrders.length;
       const onTimeDelivered = deliveredOrders.filter((o) => !o.delayReason && !o.deliveryDelay);
@@ -95,10 +109,11 @@ export default function DeliveryPartners() {
         statusType = 'off_duty';
         subText = 'Off duty · Cannot receive orders';
         btnAction = 'Message';
-      } else if (activeOrders.length > 0) {
+      } else if (activeOrders.length > 0 || p?.status === 'on_delivery') {
         status = 'On delivery';
         statusType = 'on_delivery';
-        subText = `${activeOrders.length} active ${activeOrders.length === 1 ? 'delivery' : 'deliveries'}`;
+        const count = activeOrders.length || 1;
+        subText = `${count} active ${count === 1 ? 'delivery' : 'deliveries'}`;
         btnAction = 'Track';
       }
 
@@ -488,8 +503,9 @@ export default function DeliveryPartners() {
                         {d.address}
                       </div>
                       {d.instructions ? (
-                        <div className="mt-1.5 p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-900 font-semibold">
-                          📌 {typeof d.instructions === 'string' ? d.instructions : String(d.instructions)}
+                        <div className="mt-1.5 p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-900 font-semibold flex items-start gap-1">
+                          <MapPin size={11} className="text-amber-700 shrink-0 mt-0.5" />
+                          <span>{typeof d.instructions === 'string' ? d.instructions : String(d.instructions)}</span>
                         </div>
                       ) : null}
                     </td>
@@ -537,7 +553,7 @@ export default function DeliveryPartners() {
                           >
                             <option value="">
                               {d.acceptanceStatus === 'REJECTED'
-                                ? '⚠️ Re-assign partner...'
+                                ? 'Re-assign partner...'
                                 : d.assignedPartnerId
                                 ? 'Re-assign partner...'
                                 : 'Assign partner...'}
@@ -604,8 +620,9 @@ export default function DeliveryPartners() {
                     <td className="py-3.5 px-3 align-top min-w-[140px]">
                       {d.isDelivered || d.isConfirmed ? (
                         <div className="space-y-1">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            ✓ Delivered & Confirmed
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            <Check size={11} strokeWidth={2.5} />
+                            Delivered & Confirmed
                           </span>
                           {d.rating ? (
                             <div className="flex items-center gap-1 text-xs font-black text-amber-700">
@@ -700,8 +717,9 @@ export default function DeliveryPartners() {
                   </div>
                   <p className="text-[11px] text-gray-500 leading-relaxed">{d.address}</p>
                   {d.instructions ? (
-                    <div className="p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-900 font-semibold">
-                      📌 {typeof d.instructions === 'string' ? d.instructions : String(d.instructions)}
+                    <div className="p-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-900 font-semibold flex items-start gap-1">
+                      <MapPin size={11} className="text-amber-700 shrink-0 mt-0.5" />
+                      <span>{typeof d.instructions === 'string' ? d.instructions : String(d.instructions)}</span>
                     </div>
                   ) : null}
                 </div>
@@ -729,8 +747,9 @@ export default function DeliveryPartners() {
                     </div>
                     {/* Delivery Status Badge */}
                     {d.isDelivered || d.isConfirmed ? (
-                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                        ✓ Delivered
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded flex items-center gap-1">
+                        <Check size={11} strokeWidth={2.5} />
+                        <span>Delivered</span>
                       </span>
                     ) : d.isOutForDelivery ? (
                       <span className="text-[10px] font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded">
@@ -747,7 +766,7 @@ export default function DeliveryPartners() {
                     >
                       <option value="">
                         {d.acceptanceStatus === 'REJECTED'
-                          ? '⚠️ Re-assign partner...'
+                          ? 'Re-assign partner...'
                           : d.assignedPartnerId
                           ? 'Re-assign partner...'
                           : 'Assign partner...'}

@@ -3,6 +3,7 @@ import { Search, Volume2, Bell, Menu, ShoppingBag, CreditCard, AlertCircle, Pack
 import { useNavigate } from 'react-router-dom';
 import { getAudioContext, playNotificationSound } from '../utils/notificationSound';
 import { useBadges } from '../context/BadgeContext';
+import { apiGet, apiPut } from '../services/api';
 import toast from 'react-hot-toast';
 
 export default function TopBar({ onOpenMobileMenu }) {
@@ -10,11 +11,25 @@ export default function TopBar({ onOpenMobileMenu }) {
   const [storeOpen, setStoreOpen] = useState(() => {
     return localStorage.getItem('ms_admin_store_open') !== 'false';
   });
+  const [togglePending, setTogglePending] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const notifRef = useRef(null);
 
   const { counts: alertCounts, recentAlerts } = useBadges();
+
+  // The Admin SDK owns config writes. Load status through the authenticated API
+  // so this admin client does not attempt a Firestore write forbidden by rules.
+  useEffect(() => {
+    let active = true;
+    apiGet('/config').then((data) => {
+      if (!active) return;
+      const open = data.isStoreOpen !== false && data.storeOpen !== false;
+      setStoreOpen(open);
+      localStorage.setItem('ms_admin_store_open', String(open));
+    }).catch((err) => console.error('Failed to load store status:', err));
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -39,11 +54,27 @@ export default function TopBar({ onOpenMobileMenu }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const toggleStore = () => {
+  const toggleStore = async () => {
+    if (togglePending) return;
     const next = !storeOpen;
+    const previous = storeOpen;
+    setTogglePending(true);
     setStoreOpen(next);
     localStorage.setItem('ms_admin_store_open', String(next));
-    toast.success(next ? 'Store is open for orders' : 'Store is closed for orders');
+    try {
+      const data = await apiPut('/config', { isStoreOpen: next, storeOpen: next });
+      const confirmed = data.isStoreOpen !== false && data.storeOpen !== false;
+      setStoreOpen(confirmed);
+      localStorage.setItem('ms_admin_store_open', String(confirmed));
+      toast.success(next ? 'Store is open for orders' : 'Store is closed for orders');
+    } catch (err) {
+      setStoreOpen(previous);
+      localStorage.setItem('ms_admin_store_open', String(previous));
+      console.error('Failed to sync store status:', err);
+      toast.error(err.message || 'Failed to update store status');
+    } finally {
+      setTogglePending(false);
+    }
   };
 
   const handleTestSound = () => {
@@ -108,8 +139,9 @@ export default function TopBar({ onOpenMobileMenu }) {
           <button
             onClick={toggleStore}
             type="button"
+            disabled={togglePending}
             aria-label="Toggle store status"
-            className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+            className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:cursor-wait disabled:opacity-70 ${
               storeOpen ? 'bg-[#0a7c47]' : 'bg-gray-300'
             }`}
           >

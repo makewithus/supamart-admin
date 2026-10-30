@@ -278,35 +278,41 @@ export default function Feedback() {
               <button
                 type="button"
                 onClick={() => setFilterTab('5')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
                   filterTab === '5'
                     ? 'bg-white text-[#0a7c47] shadow-2xs'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                5★ ({counts[5] || 0})
+                <span>5</span>
+                <Star size={11} className="fill-current" />
+                <span>({counts[5] || 0})</span>
               </button>
               <button
                 type="button"
                 onClick={() => setFilterTab('4')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
                   filterTab === '4'
                     ? 'bg-white text-[#059669] shadow-2xs'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                4★ ({counts[4] || 0})
+                <span>4</span>
+                <Star size={11} className="fill-current" />
+                <span>({counts[4] || 0})</span>
               </button>
               <button
                 type="button"
                 onClick={() => setFilterTab('LOW')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
                   filterTab === 'LOW'
                     ? 'bg-white text-[#dc2626] shadow-2xs'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                1–3★ ({counts[1] + counts[2] + counts[3]})
+                <span>1–3</span>
+                <Star size={11} className="fill-current" />
+                <span>({counts[1] + counts[2] + counts[3]})</span>
               </button>
             </div>
           </div>
@@ -412,7 +418,8 @@ export default function Feedback() {
                                 className="inline-flex items-center gap-1 text-[11px] bg-gray-50 border border-gray-100 rounded-md px-2 py-0.5 text-gray-600 font-medium"
                               >
                                 <Package size={10} className="text-gray-400" />
-                                {name}: {pr.rating}★
+                                <span>{name}: {pr.rating}</span>
+                                <Star size={10} className="fill-amber-400 text-amber-400 inline" />
                               </span>
                             );
                           })}

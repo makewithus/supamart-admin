@@ -343,9 +343,7 @@ export default function Settings() {
       // 4. Update local storage preferences
       localStorage.setItem('ms_alert_sound_enabled', String(alerts.newOrderSound));
 
-      toast.success('Changes saved successfully!', {
-        icon: '✅',
-      });
+      toast.success('Changes saved successfully!');
     } catch (err) {
       console.error('Error saving settings:', err);
       toast.error('Failed to save settings: ' + err.message);
@@ -357,7 +355,7 @@ export default function Settings() {
   // Discard changes and revert to Firestore state
   const handleDiscard = async () => {
     try {
-      toast('Changes discarded', { icon: '↩️' });
+      toast('Changes discarded');
       // Reset by fetching active document
       const snap = await apiGet('/config').catch(() => null);
       if (snap) {
@@ -468,9 +466,9 @@ export default function Settings() {
         if (next) {
           getAudioContext()?.resume();
           playNotificationSound();
-          toast.success('New order sound enabled (test chime played)', { icon: '🔔' });
+          toast.success('New order sound enabled (test chime played)');
         } else {
-          toast('New order sound disabled', { icon: '🔕' });
+          toast('New order sound disabled');
         }
       }
       return { ...prev, [key]: next };
@@ -1306,7 +1304,7 @@ export default function Settings() {
                           onClick={() => {
                             getAudioContext()?.resume();
                             playNotificationSound();
-                            toast.success('Playing alert chime', { icon: '🔔' });
+                            toast.success('Playing alert chime');
                           }}
                           className="text-[11px] font-normal text-emerald-700 hover:underline flex items-center gap-1"
                         >

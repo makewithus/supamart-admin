@@ -1,6 +1,8 @@
 import { getToken, onMessage } from 'firebase/messaging';
 import { getMessagingIfSupported, auth } from '../config/firebase';
 import { apiPost, apiDel } from './api';
+import toast from 'react-hot-toast';
+import { playNotificationSound } from '../utils/notificationSound';
 
 const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
 
@@ -103,17 +105,32 @@ export async function initPushNotifications({ requestPermission = false } = {}) 
 
   currentToken = token;
 
-  // Foreground messages (tab open + focused): logged for diagnostics only. When the tab is
-  // focused, the Firestore onSnapshot listener in useNewOrderAlert.js has already fired the
-  // sound + the "New Order Received" banner for the same order by the time this callback
-  // runs (it doesn't depend on FCM/permission at all, so it's always faster/more reliable).
-  // Also alerting here would mean two sounds + two banners for one order — intentionally
-  // not done. The service worker's onBackgroundMessage (firebase-messaging-sw.js) is what
-  // actually matters for FCM: it only fires when this tab is NOT focused, which is exactly
-  // the case the onSnapshot listener can't cover.
+  // Foreground messages (tab open)
   if (foregroundUnsub) foregroundUnsub();
   foregroundUnsub = onMessage(messaging, (payload) => {
-    console.info('Push notifications: foreground FCM message received (no-op by design — see comment)', payload);
+    console.info('Push notifications: foreground FCM message received', payload);
+    const title = payload.notification?.title || payload.data?.title || 'SupaMart Alert';
+    const body = payload.notification?.body || payload.data?.body || '';
+
+    if (localStorage.getItem('ms_alert_sound_enabled') !== 'false') {
+      playNotificationSound();
+    }
+
+    toast(body ? `${title}\n${body}` : title, {
+      duration: 5000,
+      style: { fontWeight: '600', whiteSpace: 'pre-line' },
+    });
+
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try {
+        new Notification(title, {
+          body,
+          icon: '/logo.png',
+        });
+      } catch (err) {
+        console.warn('FCM foreground Notification constructor error:', err.message);
+      }
+    }
   });
 
   return { ok: true, token };

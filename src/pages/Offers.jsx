@@ -64,8 +64,10 @@ export default function Offers() {
         const discountText =
           o.kind === 'PERCENT' ? `${o.value}% off` : `₹${o.value} off`;
         let cond = '';
-        if (o.minValue > 0) cond += `Min ₹${o.minValue}`;
-        if (o.maxDiscount) cond += `${cond ? ' · ' : ''}Max ₹${o.maxDiscount}`;
+        if (o.minValue > 0) cond += `Min order ₹${o.minValue}`;
+        if (o.kind === 'PERCENT' && o.maxDiscount && Number(o.maxDiscount) > 0) {
+          cond += `${cond ? ' · ' : ''}Max discount ₹${o.maxDiscount}`;
+        }
         if (o.firstOrderOnly) cond += `${cond ? ' · ' : ''}first order only`;
         if (!cond) cond = 'No min order';
 

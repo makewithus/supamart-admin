@@ -67,7 +67,14 @@ function MiniSparkline({ heights = [20, 20, 20, 20, 20] }) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { dashboardLowStock } = useBadges();
+  const {
+    counts: badgeCounts,
+    waitingPaymentAmount,
+    oldestNewOrderMins,
+    dashboardLowStock,
+    orders: contextOrders,
+    issues: contextIssues,
+  } = useBadges();
   const [timeRange, setTimeRange] = useState('Today');
   const [hoveredBar, setHoveredBar] = useState(null);
 
@@ -101,7 +108,7 @@ export default function Dashboard() {
 
   const fetchOrdersFromApi = async () => {
     try {
-      const data = await apiGet('/orders?limit=100');
+      const data = await apiGet('/orders?limit=50');
       const items = Array.isArray(data) ? data : data?.items || [];
       if (items.length > 0) {
         setOrders(items.map(normalizeOrder));
@@ -110,39 +117,22 @@ export default function Dashboard() {
     setLoading(false);
   };
 
-  // Subscribe to real-time orders with robust API fallback on error
+  // Consume live orders from unified BadgeContext (0 redundant billable Firestore reads)
   useEffect(() => {
-    try {
-      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(30));
-      const unsub = onSnapshot(
-        q,
-        (snap) => {
-          setOrders(snap.docs.map((d) => normalizeOrder({ id: d.id, ...d.data() })));
-          setLoading(false);
-        },
-        (err) => {
-          console.error('Real-time orders error:', err);
-          fetchOrdersFromApi();
-        }
-      );
-      return () => {
-        unsub();
-      };
-    } catch (_) {
+    if (contextOrders && contextOrders.length > 0) {
+      setOrders(contextOrders.map(normalizeOrder));
+      setLoading(false);
+    } else {
       fetchOrdersFromApi();
     }
-  }, []);
+  }, [contextOrders]);
 
-  // Subscribe to real-time issues
+  // Consume live issues from unified BadgeContext (0 redundant billable Firestore reads)
   useEffect(() => {
-    try {
-      const q = query(collection(db, 'issues'), orderBy('createdAt', 'desc'), limit(20));
-      const unsub = onSnapshot(q, (snap) => {
-        setIssues(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      }, () => {});
-      return () => unsub();
-    } catch (_) {}
-  }, []);
+    if (contextIssues) {
+      setIssues(contextIssues);
+    }
+  }, [contextIssues]);
 
   // Subscribe to real-time delivery partners
   useEffect(() => {
@@ -183,24 +173,31 @@ export default function Dashboard() {
   const startOf7DaysAgo = startOfToday - (6 * 24 * 60 * 60 * 1000);
   const startOf30DaysAgo = startOfToday - (29 * 24 * 60 * 60 * 1000);
 
-  // 1. Alert / Action Card metrics (100% Real-time, NO mock fallbacks)
+  // 1. Alert / Action Card metrics (100% Real-time, unified with Sidebar and DB)
   const actionMetrics = useMemo(() => {
     // New orders awaiting action
-    const newOrders = orders.filter((o) =>
-      o.status === 'ORDER_PLACED' || o.status === 'PENDING_CONFIRMATION' || !o.status || o.status === 'PLACED'
-    );
-    let oldestMinutes = 0;
-    if (newOrders.length > 0) {
+    const newOrders = orders.filter((o) => {
+      const s = (o.status || '').toUpperCase();
+      return s === 'ORDER_PLACED' || s === 'PLACED' || s === 'NEW' || !s;
+    });
+
+    let oldestMinutes = oldestNewOrderMins;
+    if ((!oldestMinutes || oldestMinutes === 0) && newOrders.length > 0) {
       const oldestTime = Math.min(...newOrders.map((o) => o.createdAt || Date.now()));
       oldestMinutes = Math.max(1, Math.floor((Date.now() - oldestTime) / 60000));
     }
 
-    // Payments to verify (Manual UPI pending)
-    const unverified = orders.filter((o) =>
-      (o.paymentMethod === 'UPI_MANUAL' || o.paymentMethod === 'UPI') &&
-      (o.paymentStatus === 'PENDING' || o.paymentStatus === 'AWAITING_CONFIRMATION' || o.paymentStatus === 'AWAITING_VERIFICATION')
-    );
-    const unverifiedAmount = unverified.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+    // Payments to verify (Manual UPI pending, excluding cancelled)
+    const unverified = orders.filter((o) => {
+      const isUpi = !o.paymentMethod || o.paymentMethod === 'UPI_MANUAL' || o.paymentMethod === 'UPI';
+      const isPending = o.paymentStatus === 'AWAITING_CONFIRMATION' ||
+        o.paymentStatus === 'PENDING' ||
+        o.paymentStatus === 'AWAITING_VERIFICATION';
+      const notCancelled = (o.status || '').toUpperCase() !== 'CANCELLED';
+      return isUpi && isPending && notCancelled;
+    });
+    const calculatedAmount = unverified.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+    const unverifiedAmount = waitingPaymentAmount > 0 ? waitingPaymentAmount : calculatedAmount;
 
     // Open issues
     const openIssues = issues.filter((i) => i.status === 'OPEN' || (!i.status && !i.resolved));
@@ -211,16 +208,16 @@ export default function Dashboard() {
     const lowNames = dashboardLowStock?.names || '';
 
     return {
-      newOrdersCount: newOrders.length,
+      newOrdersCount: badgeCounts?.orders ?? newOrders.length,
       oldestMinutes,
-      unverifiedCount: unverified.length,
+      unverifiedCount: badgeCounts?.payments ?? unverified.length,
       unverifiedAmount,
-      openIssuesCount: openIssues.length,
+      openIssuesCount: badgeCounts?.issues ?? openIssues.length,
       overdueIssuesCount: overdueIssues.length,
       lowStockCount,
       lowStockNames: lowNames,
     };
-  }, [orders, issues, dashboardLowStock]);
+  }, [orders, issues, dashboardLowStock, badgeCounts, waitingPaymentAmount, oldestNewOrderMins]);
 
   // 2. Metric KPI Cards (Real-time computed based on selected timeRange)
   const rangeConfig = useMemo(() => {

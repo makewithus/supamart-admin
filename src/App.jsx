@@ -13,11 +13,9 @@ import NewOrderBanner from './components/NewOrderBanner';
 import LowStockBanner from './components/LowStockBanner';
 import EnableAlertsPrompt from './components/EnableAlertsPrompt';
 import useIdleLogout from './hooks/useIdleLogout';
-import useNewOrderAlert from './hooks/useNewOrderAlert';
-import useLowStockAlert from './hooks/useLowStockAlert';
 import { autoUnlockOnFirstInteraction } from './utils/notificationSound';
 import { initPushNotifications, teardownPushNotifications } from './services/pushNotifications';
-import { BadgeProvider } from './context/BadgeContext';
+import { BadgeProvider, useBadges } from './context/BadgeContext';
 
 // Persistent (not sessionStorage) — once dismissed, stays dismissed across reloads/new
 // tabs/browser restarts. Combined with the Notification.permission check below, the
@@ -93,15 +91,11 @@ function PageFallback() {
   );
 }
 
-function AppShell() {
+function AppShellContent() {
   const navigate = useNavigate();
-  const [orderAlert, setOrderAlert] = useState(null);
-  const [lowStockAlert, setLowStockAlert] = useState(null);
+  const { orderAlert, clearOrderAlert, lowStockAlert, clearLowStockAlert } = useBadges();
   const [showEnablePrompt, setShowEnablePrompt] = useState(shouldShowEnablePrompt);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  useNewOrderAlert(true, useCallback((order) => setOrderAlert(order), []));
-  useLowStockAlert(true, useCallback((alert) => setLowStockAlert(alert), []));
 
   useEffect(() => {
     autoUnlockOnFirstInteraction();
@@ -109,14 +103,14 @@ function AppShell() {
 
   const handleViewOrder = () => {
     if (orderAlert) navigate('/orders', { state: { openOrderId: orderAlert.id } });
-    setOrderAlert(null);
+    clearOrderAlert();
   };
 
   const handleViewLowStock = () => {
     if (lowStockAlert) {
       navigate('/products', { state: { search: lowStockAlert.productName } });
     }
-    setLowStockAlert(null);
+    clearLowStockAlert();
   };
 
   const dismissEnablePrompt = () => {
@@ -125,57 +119,63 @@ function AppShell() {
   };
 
   return (
-    <BadgeProvider>
-      <div className="flex h-screen bg-[#F5F6F4] overflow-hidden">
-        <Navbar mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
-        <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-          <TopBar onOpenMobileMenu={() => setMobileMenuOpen(true)} />
-          <main className="flex-1 min-w-0 min-h-0 overflow-y-auto bg-[#F5F6F4]">
-            {orderAlert ? (
-              <NewOrderBanner order={orderAlert} onView={handleViewOrder} onDismiss={() => setOrderAlert(null)} />
-            ) : lowStockAlert ? (
-              <LowStockBanner
-                alert={lowStockAlert}
-                onView={handleViewLowStock}
-                onDismiss={() => setLowStockAlert(null)}
-              />
-            ) : (
-              <EnableAlertsPrompt
-                show={showEnablePrompt}
-                onEnabled={() => setShowEnablePrompt(false)}
-                onDismiss={dismissEnablePrompt}
-              />
-            )}
-            <ErrorBoundary>
-              <Suspense fallback={<PageFallback />}>
-                <Routes>
-                  <Route path="/"                   element={<Dashboard />} />
-                  <Route path="/dashboard"          element={<Dashboard />} />
-                  <Route path="/products"           element={<Products />}  />
-                  <Route path="/orders"             element={<Orders />}    />
-                  <Route path="/deliveries"         element={<DeliveryPartners />} />
-                  <Route path="/delivery-partners"  element={<DeliveryPartners />} />
-                  <Route path="/payments"           element={<Accounts />}  />
-                  <Route path="/accounts"           element={<Accounts />}  />
-                  <Route path="/refunds"            element={<RefundRequests />} />
-                  <Route path="/issues"             element={<Issues />} />
-                  <Route path="/feedback"           element={<Feedback />} />
-                  <Route path="/ratings"            element={<Feedback />} />
-                  <Route path="/categories"         element={<Categories />}/>
-                  <Route path="/brands"             element={<Brands />}    />
-                  <Route path="/customers"          element={<Customers />} />
-                  <Route path="/ms-club"            element={<MSClub />} />
-                  <Route path="/offers"             element={<Offers />}    />
-                  <Route path="/push-notifications" element={<PushNotifications />}  />
-                  <Route path="/reports"            element={<Reports />} />
-                  <Route path="/settings"           element={<Settings />}  />
-                  <Route path="/admin-login" element={<Navigate to="/" replace />} />
-                </Routes>
-              </Suspense>
-            </ErrorBoundary>
-          </main>
-        </div>
+    <div className="flex h-screen bg-[#F5F6F4] overflow-hidden">
+      <Navbar mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        <TopBar onOpenMobileMenu={() => setMobileMenuOpen(true)} />
+        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto bg-[#F5F6F4]">
+          {orderAlert ? (
+            <NewOrderBanner order={orderAlert} onView={handleViewOrder} onDismiss={clearOrderAlert} />
+          ) : lowStockAlert ? (
+            <LowStockBanner
+              alert={lowStockAlert}
+              onView={handleViewLowStock}
+              onDismiss={clearLowStockAlert}
+            />
+          ) : (
+            <EnableAlertsPrompt
+              show={showEnablePrompt}
+              onEnabled={() => setShowEnablePrompt(false)}
+              onDismiss={dismissEnablePrompt}
+            />
+          )}
+          <ErrorBoundary>
+            <Suspense fallback={<PageFallback />}>
+              <Routes>
+                <Route path="/"                   element={<Dashboard />} />
+                <Route path="/dashboard"          element={<Dashboard />} />
+                <Route path="/products"           element={<Products />}  />
+                <Route path="/orders"             element={<Orders />}    />
+                <Route path="/deliveries"         element={<DeliveryPartners />} />
+                <Route path="/delivery-partners"  element={<DeliveryPartners />} />
+                <Route path="/payments"           element={<Accounts />}  />
+                <Route path="/accounts"           element={<Accounts />}  />
+                <Route path="/refunds"            element={<RefundRequests />} />
+                <Route path="/issues"             element={<Issues />} />
+                <Route path="/feedback"           element={<Feedback />} />
+                <Route path="/ratings"            element={<Feedback />} />
+                <Route path="/categories"         element={<Categories />}/>
+                <Route path="/brands"             element={<Brands />}    />
+                <Route path="/customers"          element={<Customers />} />
+                <Route path="/ms-club"            element={<MSClub />} />
+                <Route path="/offers"             element={<Offers />}    />
+                <Route path="/push-notifications" element={<PushNotifications />}  />
+                <Route path="/reports"            element={<Reports />} />
+                <Route path="/settings"           element={<Settings />}  />
+                <Route path="/admin-login" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Suspense>
+          </ErrorBoundary>
+        </main>
       </div>
+    </div>
+  );
+}
+
+function AppShell() {
+  return (
+    <BadgeProvider>
+      <AppShellContent />
     </BadgeProvider>
   );
 }

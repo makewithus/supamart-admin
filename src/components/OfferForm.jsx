@@ -114,6 +114,33 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
       return toast.error('Please fill required fields (Code, Value, Dates)');
     }
 
+    const numValue = Number(formData.value);
+    if (isNaN(numValue) || numValue <= 0) {
+      return toast.error('Discount value must be greater than 0');
+    }
+
+    if (formData.kind === 'PERCENT') {
+      if (numValue > 100) {
+        return toast.error('Percentage discount cannot exceed 100%');
+      }
+      if (formData.maxValue && Number(formData.maxValue) <= 0) {
+        return toast.error('Max discount cap must be greater than 0');
+      }
+    }
+
+    if (formData.kind === 'FLAT') {
+      const minVal = Number(formData.minValue) || 0;
+      if (minVal > 0 && minVal < numValue) {
+        return toast.error(`Min order value (₹${minVal}) cannot be less than flat discount amount (₹${numValue})`);
+      }
+    }
+
+    const fromTime = new Date(formData.validFrom).getTime();
+    const toTime = new Date(formData.validTo).getTime();
+    if (toTime <= fromTime) {
+      return toast.error('Valid To date must be after Valid From date');
+    }
+
     if (formData.scope === 'CATEGORY' && !formData.scopeId) {
       return toast.error('Please select a target Category for this offer.');
     }
@@ -139,14 +166,14 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
         tagColor:    formData.tagColor || '#0a7c47',
         sortOrder:   formData.sortOrder ? Number(formData.sortOrder) : null,
         kind:        formData.kind,
-        value:       Number(formData.value),
-        validFrom:   new Date(formData.validFrom).getTime(),
-        validTo:     new Date(formData.validTo).getTime(),
+        value:       numValue,
+        validFrom:   fromTime,
+        validTo:     toTime,
         scope:       formData.scope,
         scopeId:     formData.scope === 'CART' ? null : (formData.scopeId || null),
         isActive:    formData.isActive,
-        ...(formData.maxValue ? { maxDiscount: Number(formData.maxValue) } : { maxDiscount: null }),
-        ...(formData.minValue ? { minValue: Number(formData.minValue) } : { minValue: 0 }),
+        maxDiscount: formData.kind === 'PERCENT' && formData.maxValue ? Number(formData.maxValue) : null,
+        minValue:    formData.minValue ? Number(formData.minValue) : 0,
         ...(imageUrl !== undefined && { image: imageUrl }),
       };
 
@@ -283,7 +310,13 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
           <label className="block text-xs font-semibold text-neutral-500 mb-1">Discount Type *</label>
           <Select
             value={formData.kind}
-            onChange={(v) => setFormData({ ...formData, kind: v })}
+            onChange={(v) =>
+              setFormData({
+                ...formData,
+                kind: v,
+                maxValue: v === 'FLAT' ? '' : formData.maxValue,
+              })
+            }
             options={KIND_OPTIONS}
           />
         </div>
@@ -295,26 +328,33 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
             type="number"
             step="0.01"
             min="0"
+            max={formData.kind === 'PERCENT' ? '100' : undefined}
             className={inputClass}
             required
             value={formData.value}
             onChange={e => setFormData({ ...formData, value: e.target.value })}
-            placeholder={formData.kind === 'PERCENT' ? 'e.g. 15' : 'e.g. 50'}
+            placeholder={formData.kind === 'PERCENT' ? 'e.g. 15 (1-100)' : 'e.g. 50'}
           />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-xs font-semibold text-neutral-500 mb-1">Max Discount Cap (₹)</label>
+          <label className="block text-xs font-semibold text-neutral-500 mb-1">
+            Max Discount Cap (₹)
+            {formData.kind === 'FLAT' && (
+              <span className="text-[11px] font-normal text-neutral-400 ml-1.5">(Percentage only)</span>
+            )}
+          </label>
           <input
             type="number"
             step="0.01"
             min="0"
-            className={inputClass}
-            value={formData.maxValue}
+            disabled={formData.kind === 'FLAT'}
+            className={`${inputClass} ${formData.kind === 'FLAT' ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed border-dashed' : ''}`}
+            value={formData.kind === 'FLAT' ? '' : formData.maxValue}
             onChange={e => setFormData({ ...formData, maxValue: e.target.value })}
-            placeholder="e.g. 100 (Optional)"
+            placeholder={formData.kind === 'FLAT' ? 'Not applicable for flat discount' : 'e.g. 100 (Cap on % discount)'}
           />
         </div>
         <div>

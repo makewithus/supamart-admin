@@ -16,11 +16,12 @@ export default function ProductForm({ product, categories = [], brands = [], onS
     brandId: '',
     gstRate: '18%',
     lowStockAlert: '10',
-    onSale: true,
+    onSale: false,
+    isMonthlyStockUp: false,
   });
 
   const [packSizes, setPackSizes] = useState([
-    { id: 'pack-1', size: 'Standard Pack', mrp: '40', selling: '40', stock: '100' },
+    { id: 'pack-1', size: 'Standard Pack', mrp: '40', selling: '40', stock: '100', discountPercent: '', showDiscountTag: false },
   ]);
 
   const [existingImages, setExistingImages] = useState([]);
@@ -37,27 +38,44 @@ export default function ProductForm({ product, categories = [], brands = [], onS
         brandId: product.brandId || '',
         gstRate: product.gstRate || '18%',
         lowStockAlert: String(product.lowStockThreshold || '10'),
-        onSale: product.availability !== 'UNAVAILABLE',
+        onSale: (product.onSale === true || product.isOnSale === true) && product.onSale !== false && product.isOnSale !== false,
+        isMonthlyStockUp: Boolean(product.isMonthlyStockUp),
       });
 
       if (product.variants && product.variants.length > 0) {
         setPackSizes(
-          product.variants.map((v, i) => ({
-            id: v.id || `pack-${i + 1}`,
-            size: v.label || product.unit || 'Standard Pack',
-            mrp: String(v.mrp || v.price || 10),
-            selling: String(v.offerPrice || v.sellingPrice || v.price || 10),
-            stock: String(v.stock ?? 100),
-          }))
+          product.variants.map((v, i) => {
+            const mrp = Number(v.mrp || v.price || 10);
+            const sell = Number(v.offerPrice || v.sellingPrice || v.price || 10);
+            const autoDisc = mrp > sell ? Math.round(((mrp - sell) / mrp) * 100) : 0;
+            const hasCustom = v.discountPercent !== undefined;
+            const discVal = hasCustom ? String(v.discountPercent) : (autoDisc > 0 ? String(autoDisc) : '');
+            const showTag = v.showDiscountTag !== false && (v.discountPercent !== 0);
+            return {
+              id: v.id || `pack-${i + 1}`,
+              size: v.label || product.unit || 'Standard Pack',
+              mrp: String(mrp),
+              selling: String(sell),
+              stock: String(v.stock ?? 100),
+              discountPercent: discVal,
+              showDiscountTag: showTag && Number(discVal) > 0,
+            };
+          })
         );
       } else {
+        const mrp = Number(product.price || 10);
+        const sell = Number(product.offerPrice || product.price || 10);
+        const autoDisc = mrp > sell ? Math.round(((mrp - sell) / mrp) * 100) : 0;
+        const discVal = product.discountPercent !== undefined ? String(product.discountPercent) : (autoDisc > 0 ? String(autoDisc) : '');
         setPackSizes([
           {
             id: 'pack-1',
             size: product.unit || 'Standard Pack',
-            mrp: String(product.price || 10),
-            selling: String(product.offerPrice || product.price || 10),
+            mrp: String(mrp),
+            selling: String(sell),
             stock: String(product.stock ?? 100),
+            discountPercent: discVal,
+            showDiscountTag: product.showDiscountTag !== false && (product.discountPercent !== 0) && Number(discVal) > 0,
           },
         ]);
       }
@@ -81,6 +99,8 @@ export default function ProductForm({ product, categories = [], brands = [], onS
         mrp: '50',
         selling: '50',
         stock: '100',
+        discountPercent: '',
+        showDiscountTag: false,
       },
     ]);
   };
@@ -93,7 +113,66 @@ export default function ProductForm({ product, categories = [], brands = [], onS
         if (field === 'selling' && (item.mrp === item.selling || !item.mrp)) {
           updated.mrp = value;
         }
+
+        const mrp = Number(field === 'mrp' ? value : updated.mrp) || 0;
+        const sell = Number(field === 'selling' ? value : updated.selling) || 0;
+
+        // If user manually edited the % tag:
+        if (field === 'discountPercent') {
+          const num = Number(value);
+          if (value === '' || isNaN(num) || num <= 0) {
+            updated.showDiscountTag = false;
+            updated.discountPercent = value === '' ? '' : '0';
+          } else {
+            updated.showDiscountTag = true;
+            if (mrp > 0 && num > 0 && num < 100) {
+              const calculatedSell = Math.round(mrp * (1 - num / 100));
+              updated.selling = String(calculatedSell);
+            }
+          }
+        } else if (field === 'mrp' || field === 'selling') {
+          if (updated.showDiscountTag !== false && mrp > sell) {
+            updated.discountPercent = String(Math.round(((mrp - sell) / mrp) * 100));
+            updated.showDiscountTag = true;
+          } else if (mrp <= sell) {
+            updated.discountPercent = '0';
+            updated.showDiscountTag = false;
+          }
+        }
+
         return updated;
+      })
+    );
+  };
+
+  const handleToggleDiscountTag = (index) => {
+    setPackSizes((prev) =>
+      prev.map((item, i) => {
+        if (i !== index) return item;
+        const mrp = Number(item.mrp) || 0;
+        const sell = Number(item.selling) || 0;
+        const currentlyActive = item.showDiscountTag && Number(item.discountPercent) > 0;
+        if (currentlyActive) {
+          // Remove % tag
+          return {
+            ...item,
+            showDiscountTag: false,
+            discountPercent: '0',
+          };
+        } else {
+          // Add % tag
+          const auto = mrp > sell ? Math.round(((mrp - sell) / mrp) * 100) : 10;
+          let newSell = item.selling;
+          if (mrp > 0 && sell >= mrp) {
+            newSell = String(Math.round(mrp * 0.9));
+          }
+          return {
+            ...item,
+            showDiscountTag: true,
+            discountPercent: String(auto > 0 ? auto : 10),
+            selling: newSell,
+          };
+        }
       })
     );
   };
@@ -139,6 +218,7 @@ export default function ProductForm({ product, categories = [], brands = [], onS
       if (isNaN(mrpNum) || mrpNum <= 0) return toast.error('MRP must be greater than 0');
       if (isNaN(sellNum) || sellNum <= 0) return toast.error('Selling price must be greater than 0');
     }
+    if (packSizes.length === 0) return toast.error('Add at least one pack size');
 
     setLoading(true);
     try {
@@ -152,7 +232,11 @@ export default function ProductForm({ product, categories = [], brands = [], onS
       const builtVariants = packSizes.map((p, idx) => {
         const mrp = Number(p.mrp);
         const selling = Number(p.selling);
-        const discountPercent = mrp > selling ? Math.round(((mrp - selling) / mrp) * 100) : 0;
+        const numDisc = Number(p.discountPercent);
+        const hasCustomDisc = !isNaN(numDisc) && numDisc > 0;
+        const showTag = p.showDiscountTag !== false && (hasCustomDisc || (p.discountPercent !== '0' && mrp > selling));
+        const discountPercent = !showTag ? 0 : (hasCustomDisc ? numDisc : Math.round(((mrp - selling) / mrp) * 100));
+
         return {
           id: p.id || `var-${idx + 1}`,
           label: p.size.trim(),
@@ -161,11 +245,20 @@ export default function ProductForm({ product, categories = [], brands = [], onS
           mrp: mrp,
           sellingPrice: selling,
           discountPercent,
+          showDiscountTag: showTag && discountPercent > 0,
           stock: Number(p.stock) || 0,
         };
       });
+      const primaryPack = builtVariants[0];
 
-      const primaryPack = builtVariants[0] || {};
+      const totalStock = builtVariants.reduce((sum, v) => sum + (v.stock || 0), 0);
+      const isAvailable = totalStock > 0 ? 'AVAILABLE' : 'OUT_OF_STOCK';
+      const onSaleActive = Boolean(formData.onSale);
+      const firstDiscountedPack = builtVariants.find((variant) => variant.offerPrice != null && variant.offerPrice < variant.price && variant.showDiscountTag);
+      if (onSaleActive && !firstDiscountedPack) {
+        toast.error('Set a discounted pack price before adding this product to Today’s Best Prices');
+        return;
+      }
 
       const payload = {
         name: formData.name.trim(),
@@ -173,14 +266,24 @@ export default function ProductForm({ product, categories = [], brands = [], onS
         categoryId: formData.categoryId,
         brandId: formData.brandId || null,
         price: primaryPack.price || 10,
-        offerPrice: primaryPack.offerPrice,
-        stock: builtVariants.reduce((sum, v) => sum + (v.stock || 0), 0),
+        offerPrice: onSaleActive ? primaryPack.offerPrice : null,
+        discountPercent: onSaleActive ? (primaryPack.discountPercent || firstDiscountedPack.discountPercent) : 0,
+        showDiscountTag: onSaleActive ? Boolean(firstDiscountedPack) : false,
+        stock: totalStock,
         unit: primaryPack.label || '1 kg',
-        availability: formData.onSale ? 'AVAILABLE' : 'UNAVAILABLE',
-        variants: builtVariants,
+        availability: isAvailable,
+        onSale: onSaleActive,
+        isOnSale: onSaleActive,
+        variants: builtVariants.map((v) => ({
+          ...v,
+          offerPrice: onSaleActive ? v.offerPrice : null,
+          discountPercent: onSaleActive ? v.discountPercent : 0,
+          showDiscountTag: onSaleActive ? v.showDiscountTag : false,
+        })),
         images: allImages,
         gstRate: formData.gstRate,
         lowStockThreshold: Number(formData.lowStockAlert) || 10,
+        isMonthlyStockUp: Boolean(formData.isMonthlyStockUp),
       };
 
       if (isEdit && product?.id) {
@@ -353,11 +456,12 @@ export default function ProductForm({ product, categories = [], brands = [], onS
               Pack sizes
             </label>
             <div className="border border-gray-200 rounded-xl overflow-x-auto divide-y divide-gray-100">
-              <div className="min-w-[420px]">
-                <div className="grid grid-cols-12 bg-gray-50/80 px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                  <div className="col-span-4">SIZE</div>
+              <div className="min-w-[500px]">
+                <div className="grid grid-cols-12 bg-gray-50/80 px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider items-center">
+                  <div className="col-span-3">SIZE</div>
                   <div className="col-span-2 text-center">MRP ₹</div>
-                  <div className="col-span-3 text-center">SELLING ₹</div>
+                  <div className="col-span-2 text-center">SELLING ₹</div>
+                  <div className="col-span-2 text-center">% TAG</div>
                   <div className="col-span-2 text-center">STOCK</div>
                   <div className="col-span-1"></div>
                 </div>
@@ -367,11 +471,12 @@ export default function ProductForm({ product, categories = [], brands = [], onS
                     const sellVal = Number(pack.selling) || 0;
                     const hasPriceError = mrpVal > 0 && sellVal > mrpVal;
                     const hasStandardPackWarning = pack.size.toLowerCase().includes('standard pack');
+                    const hasActiveTag = pack.showDiscountTag && Number(pack.discountPercent) > 0;
 
                     return (
                       <div key={pack.id || i} className="space-y-1.5 pt-1">
                         <div className="grid grid-cols-12 gap-2 items-center">
-                          <div className="col-span-4">
+                          <div className="col-span-3">
                             <input
                               type="text"
                               value={pack.size}
@@ -386,21 +491,40 @@ export default function ProductForm({ product, categories = [], brands = [], onS
                               value={pack.mrp}
                               onChange={(e) => handleUpdatePackSize(i, 'mrp', e.target.value)}
                               placeholder="10"
-                              className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-center text-gray-900 focus:outline-none focus:border-[#0E6C3B]"
+                              className="w-full border border-gray-200 rounded-xl px-2 py-1.5 text-xs text-center text-gray-900 focus:outline-none focus:border-[#0E6C3B]"
                             />
                           </div>
-                          <div className="col-span-3">
+                          <div className="col-span-2">
                             <input
                               type="number"
                               value={pack.selling}
                               onChange={(e) => handleUpdatePackSize(i, 'selling', e.target.value)}
                               placeholder="40"
-                              className={`w-full rounded-xl px-2.5 py-1.5 text-xs text-center text-gray-900 focus:outline-none ${
+                              className={`w-full rounded-xl px-2 py-1.5 text-xs text-center text-gray-900 focus:outline-none ${
                                 hasPriceError
                                   ? 'border-2 border-red-500'
                                   : 'border border-gray-200 focus:border-[#0E6C3B]'
                               }`}
                             />
+                          </div>
+                          <div className="col-span-2 flex items-center">
+                            <div className="relative w-full">
+                              <input
+                                type="number"
+                                min="0"
+                                max="99"
+                                value={pack.discountPercent ?? ''}
+                                onChange={(e) => handleUpdatePackSize(i, 'discountPercent', e.target.value)}
+                                placeholder="0"
+                                className={`w-full border rounded-xl pl-1 pr-3.5 py-1.5 text-xs text-center text-gray-900 focus:outline-none ${
+                                  hasActiveTag
+                                    ? 'border-green-300 bg-green-50/40 text-[#0E6C3B] font-bold focus:border-[#0E6C3B]'
+                                    : 'border-gray-200 text-gray-500 focus:border-[#0E6C3B]'
+                                }`}
+                                title="Discount % tag (0 or blank to remove tag)"
+                              />
+                              <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">%</span>
+                            </div>
                           </div>
                           <div className="col-span-2">
                             <input
@@ -408,7 +532,7 @@ export default function ProductForm({ product, categories = [], brands = [], onS
                               value={pack.stock}
                               onChange={(e) => handleUpdatePackSize(i, 'stock', e.target.value)}
                               placeholder="100"
-                              className="w-full border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-center text-gray-900 focus:outline-none focus:border-[#0E6C3B]"
+                              className="w-full border border-gray-200 rounded-xl px-2 py-1.5 text-xs text-center text-gray-900 focus:outline-none focus:border-[#0E6C3B]"
                             />
                           </div>
                           <div className="col-span-1 text-center">
@@ -417,9 +541,33 @@ export default function ProductForm({ product, categories = [], brands = [], onS
                                 type="button"
                                 onClick={() => handleRemovePackSize(i)}
                                 className="text-gray-400 hover:text-red-500 p-1"
+                                title="Delete pack"
                               >
                                 <Trash2 size={13} />
                               </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* % Tag Toggle / Quick Controls */}
+                        <div className="flex items-center justify-between px-1 text-[11px]">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleDiscountTag(i)}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors cursor-pointer ${
+                                hasActiveTag
+                                  ? 'bg-green-100 text-green-800 hover:bg-red-50 hover:text-red-700'
+                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                              }`}
+                              title={hasActiveTag ? 'Click to remove % tag' : 'Click to add % tag based on market prices'}
+                            >
+                              {hasActiveTag ? `Tag: ${pack.discountPercent}% OFF (Click to remove)` : '+ Add % tag'}
+                            </button>
+                            {hasActiveTag && (
+                              <span className="text-[10px] text-gray-400">
+                                Customer badge: "{pack.discountPercent}% OFF"
+                              </span>
                             )}
                           </div>
                         </div>
@@ -508,6 +656,20 @@ export default function ProductForm({ product, categories = [], brands = [], onS
             />
             <label htmlFor="onSaleCheckbox" className="text-xs sm:text-sm font-semibold text-gray-900 cursor-pointer">
               On sale in the app
+            </label>
+          </div>
+
+          {/* Include in Monthly Stock Up checkbox */}
+          <div className="flex items-center gap-2 pt-1">
+            <input
+              type="checkbox"
+              id="monthlyStockUpCheckbox"
+              checked={formData.isMonthlyStockUp}
+              onChange={(e) => setFormData({ ...formData, isMonthlyStockUp: e.target.checked })}
+              className="w-4 h-4 text-[#0E6C3B] rounded border-gray-300 focus:ring-[#0E6C3B]"
+            />
+            <label htmlFor="monthlyStockUpCheckbox" className="text-xs sm:text-sm font-semibold text-gray-900 cursor-pointer">
+              Include in Monthly Stock Up screen
             </label>
           </div>
 

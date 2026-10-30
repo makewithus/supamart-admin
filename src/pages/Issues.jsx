@@ -103,20 +103,28 @@ export default function Issues() {
 
       const photos = Array.isArray(i.photos) ? i.photos : (i.photoUrl ? [i.photoUrl] : []);
 
+      const actualReason = i.description || i.reason || i.issueType || 'Customer reported an issue with their delivery';
+      const itemsText = Array.isArray(i.affectedItems) && i.affectedItems.length > 0
+        ? `Affected items: ${i.affectedItems.map((it) => `${it.name || it.productName || 'Item'}${it.qty ? ` (×${it.qty})` : ''}`).join(', ')}`
+        : '';
+      const fullComment = [i.description || i.reason, itemsText].filter(Boolean).join('\n\n') ||
+        `${i.issueType || 'Issue'} reported by customer.${itemsText ? `\n\n${itemsText}` : ''}`;
+
       return {
         id: i.id,
         orderNo: i.orderNo || i.orderId?.slice(-4) || '—',
         issueType: i.issueType || 'Customer Issue',
         status: i.status || 'OPEN',
-        title: i.title || i.description || (i.issueType ? `${i.issueType} reported` : 'Delivery issue'),
+        title: i.title || (i.issueType ? `${i.issueType} reported` : 'Delivery issue'),
         customerName: i.userName || 'Customer',
         customerPhone: i.userPhone || '—',
         timeAgo: formatTimeAgo(createdAt),
         timeBadge,
         isOverdue,
-        comment: i.description || 'Customer reported an issue with their delivery.',
+        comment: fullComment,
         refundAmount: Math.round(calcRefund),
         photos,
+        resolutionNotes: i.resolutionNotes || i.adminMessage || i.rejectReason || i.lastReply || null,
         raw: i,
       };
     });
@@ -333,9 +341,17 @@ export default function Issues() {
               </div>
 
               {/* Customer Quote Box */}
-              <div className="bg-neutral-50 rounded-xl p-4 border border-neutral-100/80 text-sm text-gray-700 italic font-medium leading-relaxed">
+              <div className="bg-neutral-50 rounded-xl p-4 border border-neutral-100/80 text-sm text-gray-700 italic font-medium leading-relaxed whitespace-pre-line">
                 "{activeIssue.comment}"
               </div>
+
+              {/* Previous Admin Resolution / Reply Note */}
+              {activeIssue.resolutionNotes && (
+                <div className="bg-emerald-50 rounded-xl p-3.5 border border-emerald-200/80 text-xs text-emerald-900 leading-relaxed">
+                  <span className="font-bold text-emerald-800">Shop Response: </span>
+                  {activeIssue.resolutionNotes}
+                </div>
+              )}
 
               {/* Customer Photos */}
               {activeIssue.photos && activeIssue.photos.length > 0 && (

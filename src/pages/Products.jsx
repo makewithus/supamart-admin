@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Package,
@@ -12,7 +12,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { db } from '../config/firebase';
-import { collection, query, orderBy, getDocs, limit, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, orderBy, getDocs, limit, onSnapshot } from 'firebase/firestore';
 import ProductForm from '../components/ProductForm';
 import productImages from '../utils/productImages';
 import { optimizeCloudinaryUrl } from '../utils/cloudinaryImage';
@@ -28,8 +28,10 @@ export default function Products() {
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [selectedBrand, setSelectedBrand] = useState('ALL');
   const [stockFilter, setStockFilter] = useState('ALL'); // ALL, IN_STOCK, LOW, OUT_OF_STOCK
+  const [saleFilter, setSaleFilter] = useState('ALL'); // ALL, ON_SALE, OFF_SALE
   const [statFilter, setStatFilter] = useState(null); // 'NO_PHOTO', 'STANDARD_PACK', 'LOW_STOCK', 'PRICING'
   const [loading, setLoading] = useState(true);
+  const productSnapshotReadyRef = useRef(false);
 
   // Drawer modal state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -50,7 +52,7 @@ export default function Products() {
       if (data) {
         if (data.categories) setCategories(data.categories);
         if (data.brands) setBrands(data.brands);
-        if (data.products) setProducts(data.products);
+        if (data.products && !productSnapshotReadyRef.current) setProducts(data.products);
         setLoading(false);
         return;
       }
@@ -67,7 +69,7 @@ export default function Products() {
       ]);
       setCategories(catSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setBrands(brandSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      setProducts(prodSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      if (!productSnapshotReadyRef.current) setProducts(prodSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
     } catch (e) {
       console.error('Failed to load products from Firestore:', e);
     } finally {
@@ -78,6 +80,18 @@ export default function Products() {
   useEffect(() => {
     loadCatalog();
   }, [loadCatalog]);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, 'products'),
+      (snapshot) => {
+        productSnapshotReadyRef.current = true;
+        setProducts(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      (error) => console.warn('Live product updates paused:', error?.message || error)
+    );
+    return () => unsubscribe();
+  }, []);
 
   const categoryNameById = useMemo(
     () => Object.fromEntries(categories.map((c) => [c.id, c.name])),
@@ -99,7 +113,10 @@ export default function Products() {
       const resolvedImg = cleanImg ? (cleanImg.startsWith('http') ? optimizeCloudinaryUrl(cleanImg, 150) : cleanImg) : (productImages[p.name] || null);
 
       const mrp = Number(primaryVar.mrp || primaryVar.price || p.price || 0);
-      const sell = Number(primaryVar.sellingPrice || primaryVar.offerPrice || p.offerPrice || mrp);
+      const saleActive = (p.onSale === true || p.isOnSale === true) && p.onSale !== false && p.isOnSale !== false;
+      const sell = saleActive
+        ? Number(primaryVar.offerPrice || primaryVar.sellingPrice || p.offerPrice || mrp)
+        : mrp;
 
       let warning = null;
       if (sell > mrp && mrp > 0) {
@@ -117,7 +134,11 @@ export default function Products() {
         stock: totalStock,
         isLowStock: totalStock > 0 && totalStock <= (p.lowStockThreshold || 10),
         isOutOfStock: totalStock === 0,
-        onSale: p.availability !== 'UNAVAILABLE',
+        onSale: (p.onSale === true || p.isOnSale === true) && p.onSale !== false && p.isOnSale !== false,
+        discountPercent: primaryVar.discountPercent !== undefined
+          ? primaryVar.discountPercent
+          : (p.discountPercent !== undefined ? p.discountPercent : (mrp > sell ? Math.round(((mrp - sell) / mrp) * 100) : 0)),
+        showDiscountTag: primaryVar.showDiscountTag !== false && p.showDiscountTag !== false && (primaryVar.discountPercent !== 0) && (p.discountPercent !== 0),
         hasPhoto: !!resolvedImg,
         imgSrc: resolvedImg,
         isStandardPack: (p.unit || '').toLowerCase().includes('standard pack'),
@@ -150,6 +171,9 @@ export default function Products() {
       if (stockFilter === 'LOW' && !p.isLowStock && !p.isOutOfStock) return false;
       if (stockFilter === 'OUT_OF_STOCK' && (!p.isOutOfStock && p.stock > 0)) return false;
 
+      if (saleFilter === 'ON_SALE' && !p.onSale) return false;
+      if (saleFilter === 'OFF_SALE' && p.onSale) return false;
+
       if (statFilter === 'NO_PHOTO' && p.hasPhoto) return false;
       if (statFilter === 'STANDARD_PACK' && !p.isStandardPack) return false;
       if (statFilter === 'LOW_STOCK' && !p.isLowStock && !p.isOutOfStock) return false;
@@ -157,38 +181,80 @@ export default function Products() {
 
       return true;
     });
-  }, [combinedProducts, search, selectedCategory, selectedBrand, stockFilter, statFilter]);
+  }, [combinedProducts, search, selectedCategory, selectedBrand, stockFilter, saleFilter, statFilter]);
 
   const handleToggleOnSale = async (p, e) => {
     e.stopPropagation();
     const nextSale = !p.onSale;
-    const nextAvailability = nextSale ? 'AVAILABLE' : 'UNAVAILABLE';
+    const primaryVariant = p.rawDoc?.variants?.[0] || {};
+    const primaryPrice = Number(primaryVariant.price ?? primaryVariant.mrp ?? p.rawDoc?.price ?? 0);
+    const savedPrimaryOffer = Number(primaryVariant.offerPrice ?? primaryVariant.sellingPrice ?? p.rawDoc?.offerPrice ?? 0);
+    const primaryOffer = savedPrimaryOffer > 0 && savedPrimaryOffer < primaryPrice ? savedPrimaryOffer : Number(p.rawDoc?.offerPrice ?? 0);
+    const saleVariants = nextSale && Array.isArray(p.rawDoc?.variants)
+      ? p.rawDoc.variants.map((variant) => {
+          const price = Number(variant.price ?? variant.mrp ?? 0);
+          const savedOffer = Number(variant.offerPrice ?? variant.sellingPrice ?? 0);
+          const offerPrice = savedOffer > 0 && savedOffer < price ? savedOffer : null;
+          const discountPercent = Number(variant.discountPercent) || (offerPrice ? Math.round((price - offerPrice) / price * 100) : 0);
+          return {
+            ...variant,
+            offerPrice,
+            discountPercent,
+            showDiscountTag: Boolean(offerPrice && discountPercent > 0),
+          };
+        })
+      : undefined;
+    const primaryDiscount = Number(primaryVariant.discountPercent) || Number(p.rawDoc?.discountPercent) || (primaryPrice > primaryOffer && primaryPrice > 0 ? Math.round((primaryPrice - primaryOffer) / primaryPrice * 100) : 0);
+    const firstDiscountedVariant = saleVariants?.find((variant) => variant.showDiscountTag);
+    const nextShowDiscountTag = nextSale && (firstDiscountedVariant != null || (primaryOffer > 0 && primaryOffer < primaryPrice && primaryDiscount > 0));
+    const nextDiscountPercent = nextSale
+      ? (primaryOffer > 0 && primaryOffer < primaryPrice ? primaryDiscount : (firstDiscountedVariant?.discountPercent || primaryDiscount))
+      : (p.rawDoc?.discountPercent ?? p.discountPercent ?? 0);
+    const nextOfferPrice = p.rawDoc?.offerPrice ?? null;
+    const restoredOfferPrice = primaryOffer > 0 && primaryOffer < primaryPrice ? primaryOffer : nextOfferPrice;
+    const hasDiscountedPack = saleVariants
+      ? saleVariants.some((variant) => variant.showDiscountTag)
+      : primaryOffer > 0 && primaryOffer < primaryPrice && primaryDiscount > 0;
+    if (nextSale && !hasDiscountedPack) {
+      toast.error('Set a discounted pack price before enabling Today’s Best Prices');
+      return;
+    }
+
     setProducts((prev) =>
       prev.map((item) =>
         item.id === p.id
-          ? { ...item, availability: nextAvailability, onSale: nextSale, isOnSale: nextSale }
+          ? {
+              ...item,
+              onSale: nextSale,
+              isOnSale: nextSale,
+              showDiscountTag: nextShowDiscountTag,
+              discountPercent: nextDiscountPercent,
+              offerPrice: nextSale ? restoredOfferPrice : nextOfferPrice,
+              rawDoc: item.rawDoc
+                ? {
+                    ...item.rawDoc,
+                    onSale: nextSale,
+                    isOnSale: nextSale,
+                    showDiscountTag: nextShowDiscountTag,
+                    discountPercent: nextDiscountPercent,
+                    offerPrice: nextSale ? restoredOfferPrice : nextOfferPrice,
+                    ...(saleVariants ? { variants: saleVariants } : {}),
+                  }
+                : item.rawDoc,
+            }
           : item
       )
     );
     try {
-      try {
-        await apiPatch(`/products/${p.id}/availability`, {
-          availability: nextAvailability,
-          onSale: nextSale,
-          isOnSale: nextSale,
-        });
-      } catch (apiErr) {
-        // Fall back to Firestore directly
-      }
-      try {
-        const ref = doc(db, 'products', p.id);
-        await updateDoc(ref, {
-          availability: nextAvailability,
-          onSale: nextSale,
-          isOnSale: nextSale,
-          updatedAt: Date.now(),
-        });
-      } catch (_) {}
+      const payload = {
+        onSale: nextSale,
+        isOnSale: nextSale,
+        showDiscountTag: nextShowDiscountTag,
+        discountPercent: nextDiscountPercent,
+        offerPrice: nextSale ? restoredOfferPrice : nextOfferPrice,
+        ...(saleVariants ? { variants: saleVariants } : {}),
+      };
+      await apiPatch(`/products/${p.id}/availability`, payload);
       toast.success(`${p.name} is now ${nextSale ? 'on sale' : 'off sale'}`);
     } catch (err) {
       toast.error('Failed to update status: ' + err.message);
@@ -375,6 +441,37 @@ export default function Products() {
               Out
             </button>
           </div>
+
+          {/* Sale status filter */}
+          <div className="flex items-center bg-gray-50 p-0.5 rounded-xl border border-gray-200 text-xs font-semibold overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => setSaleFilter('ALL')}
+              className={`px-2.5 py-1 rounded-lg transition-all ${
+                saleFilter === 'ALL' ? 'bg-white text-gray-900 shadow-2xs font-bold' : 'text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              All status
+            </button>
+            <button
+              type="button"
+              onClick={() => setSaleFilter('ON_SALE')}
+              className={`px-2.5 py-1 rounded-lg transition-all ${
+                saleFilter === 'ON_SALE' ? 'bg-white text-emerald-700 shadow-2xs font-bold' : 'text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              On sale
+            </button>
+            <button
+              type="button"
+              onClick={() => setSaleFilter('OFF_SALE')}
+              className={`px-2.5 py-1 rounded-lg transition-all ${
+                saleFilter === 'OFF_SALE' ? 'bg-white text-rose-700 shadow-2xs font-bold' : 'text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              Off sale
+            </button>
+          </div>
         </div>
 
         {/* Right count */}
@@ -425,7 +522,14 @@ export default function Products() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <p className="font-bold text-gray-900 text-sm leading-tight truncate">{p.name}</p>
-                        <span className="font-black text-gray-900 text-sm shrink-0">₹{p.price}</span>
+                        <div className="text-right shrink-0">
+                          <span className="font-black text-gray-900 text-sm">₹{p.price}</span>
+                          {p.showDiscountTag && p.discountPercent > 0 && (
+                            <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200">
+                              {p.discountPercent}% OFF
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <p className="text-[11px] text-gray-400 mt-0.5">{p.unit} · {p.categoryName}</p>
                       {p.warning && (
@@ -555,12 +659,19 @@ export default function Products() {
 
                     {/* Price */}
                     <td className="px-6 py-3.5 whitespace-nowrap">
-                      <span className="font-bold text-gray-900 text-sm">₹{p.price}</span>
-                      {p.mrp && (
-                        <span className="text-gray-400 text-xs line-through ml-1.5 font-normal">
-                          ₹{p.mrp}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-gray-900 text-sm">₹{p.price}</span>
+                        {p.mrp && (
+                          <span className="text-gray-400 text-xs line-through font-normal">
+                            ₹{p.mrp}
+                          </span>
+                        )}
+                        {p.showDiscountTag && p.discountPercent > 0 && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200">
+                            {p.discountPercent}% OFF
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Stock */}

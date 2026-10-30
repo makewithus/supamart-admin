@@ -17,41 +17,44 @@ import { playNotificationSound } from '../utils/notificationSound';
 // native browser Notification are triggered here directly (not deferred to the caller) so
 // they still fire even if a caller doesn't pass onNewOrder.
 export default function useNewOrderAlert(enabled, onNewOrder) {
-  const mountedAtRef = useRef(Date.now());
+  const knownOrderIdsRef = useRef(new Set());
+  const initialSnapshotDoneRef = useRef(false);
 
   useEffect(() => {
     if (!enabled) return undefined;
-    mountedAtRef.current = Date.now();
-    let isFirstSnapshot = true;
+    knownOrderIdsRef.current = new Set();
+    initialSnapshotDoneRef.current = false;
 
-    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(10));
+    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(25));
     const unsub = onSnapshot(
       q,
       (snap) => {
-        // Firestore reports every existing doc as "added" on the first snapshot — only
-        // alert for orders that arrive live, after this hook mounted.
-        if (isFirstSnapshot) {
-          isFirstSnapshot = false;
+        // First snapshot: record existing orders so we only alert for newly placed ones
+        if (!initialSnapshotDoneRef.current) {
+          initialSnapshotDoneRef.current = true;
+          snap.docs.forEach((d) => knownOrderIdsRef.current.add(d.id));
           return;
         }
+
         let latestNewOrder = null;
         snap.docChanges().forEach((change) => {
           if (change.type !== 'added') return;
-          const order = { id: change.doc.id, ...change.doc.data() };
-          if ((order.createdAt || 0) < mountedAtRef.current) return;
+          const docId = change.doc.id;
+          if (knownOrderIdsRef.current.has(docId)) return;
+          knownOrderIdsRef.current.add(docId);
+
+          const order = { id: docId, ...change.doc.data() };
 
           if (localStorage.getItem('ms_alert_sound_enabled') !== 'false') {
             playNotificationSound();
           }
           latestNewOrder = order;
 
-          // Also fires a native OS/browser notification when permission has been granted —
-          // this still shows even if the admin has switched to another browser tab (though
-          // not if the browser itself is fully closed; that case needs the FCM push).
+          // Native OS / browser notification if permission granted
           if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             try {
-              new Notification(`New order #${order.orderNo}`, {
-                body: `₹${order.total} • ${(order.items || []).length} item(s)`,
+              new Notification(`New order #${order.orderNo || ''}`, {
+                body: `₹${order.total || order.totalAmount || 0} • ${(order.items || []).length} item(s)`,
                 icon: '/logo.png',
               });
             } catch (err) {
