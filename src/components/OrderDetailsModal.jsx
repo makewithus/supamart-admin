@@ -37,6 +37,12 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
   const [loading, setLoading] = useState(false);
   const [assigningPartner, setAssigningPartner] = useState(false);
   const [internalNote, setInternalNote] = useState(activeOrderData.adminNote || '');
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelPreset, setCancelPreset] = useState('Customer requested cancellation');
+  const [cancelCustomReason, setCancelCustomReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
   const [delayOpen, setDelayOpen] = useState(false);
   const [delayMins, setDelayMins] = useState('+20 mins');
   const [delayReasonText, setDelayReasonText] = useState(activeOrderData.delayReason || '');
@@ -122,6 +128,7 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
   // Determine current step index
   const currentStepIdx = (() => {
     if (activeOrderData.status === 'DELIVERED') return 4;
+    if (activeOrderData.status === 'PENDING_CONFIRMATION') return 3;
     if (activeOrderData.status === 'OUT_FOR_DELIVERY') return 3;
     if (activeOrderData.status === 'PACKING' || activeOrderData.status === 'READY_FOR_DELIVERY') return 2;
     if (activeOrderData.status === 'ORDER_ACCEPTED') return 1;
@@ -188,20 +195,46 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
     }
   };
 
-  const handleCancelOrder = async () => {
-    if (!window.confirm('Are you sure you want to cancel this order?')) return;
-    setLoading(true);
+  const handleCancelOrder = () => {
+    setShowCancelModal(true);
+  };
+
+  const handleConfirmCancel = async () => {
+    const finalReason = cancelPreset === 'Other reason'
+      ? (cancelCustomReason.trim() || 'Other reason')
+      : (cancelCustomReason.trim() ? `${cancelPreset} — ${cancelCustomReason.trim()}` : cancelPreset);
+
+    setCancelling(true);
     try {
       if (order.id && !order.id.startsWith('#')) {
-        await apiPatch(`/orders/${order.id}/status`, { status: 'CANCELLED' });
+        await apiPatch(`/orders/${order.id}/status`, {
+          status: 'CANCELLED',
+          reason: finalReason,
+        });
       }
-      toast.success(`Order ${orderNo} cancelled`);
+      toast.success(`Order ${orderNo} cancelled with reason`);
+      setShowCancelModal(false);
       onSuccess?.();
       onClose();
     } catch (e) {
       toast.error(e.response?.data?.error || `Failed to cancel order ${orderNo}`);
     } finally {
-      setLoading(false);
+      setCancelling(false);
+    }
+  };
+
+  const handleSaveNote = async () => {
+    if (!order.id || order.id.startsWith('#')) return;
+    setSavingNote(true);
+    try {
+      await apiPatch(`/orders/${order.id}/note`, { adminNote: internalNote });
+      setNoteSaved(true);
+      toast.success('Internal note saved');
+      setTimeout(() => setNoteSaved(false), 2500);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to save note');
+    } finally {
+      setSavingNote(false);
     }
   };
 
@@ -288,7 +321,8 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] overflow-hidden flex justify-end">
+    <>
+      <div className="fixed inset-0 z-[100] overflow-hidden flex justify-end">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/40 backdrop-blur-[1px] transition-opacity animate-fade-in"
@@ -332,7 +366,26 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
         </div>
 
         {/* Scrollable Content Body */}
-        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 space-y-4 sm:space-y-6">
+        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 pb-24 sm:pb-32 space-y-4 sm:space-y-6">
+          {/* Cancelled Alert Banner (if cancelled) */}
+          {activeOrderData.status === 'CANCELLED' && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl space-y-1 shadow-2xs">
+              <div className="flex items-center gap-1.5 text-rose-800 text-xs font-extrabold">
+                <AlertCircle size={15} className="text-rose-600 shrink-0" />
+                <span>Order Cancelled</span>
+                {activeOrderData.cancelledBy && (
+                  <span className="text-[10px] font-semibold text-rose-600 bg-rose-100/70 px-1.5 py-0.5 rounded">
+                    by {activeOrderData.cancelledBy}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-rose-900 font-medium pl-5">
+                <span className="font-bold">Reason: </span>
+                {activeOrderData.cancelReason || activeOrderData.cancellationReason || 'No reason specified'}
+              </p>
+            </div>
+          )}
+
           {/* Stepper Progress */}
           <div className="pt-1">
             <div className="grid grid-cols-5 text-center text-xs pb-2 border-b border-gray-100">
@@ -575,12 +628,28 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                     <span>On the way</span>
                   </div>
                   <button
-                    onClick={() => handleUpdateStatus('DELIVERED', `Order ${orderNo} marked as Delivered!`)}
+                    onClick={() => handleUpdateStatus('PENDING_CONFIRMATION', `Order ${orderNo} marked as Delivered! Awaiting customer confirmation.`)}
                     disabled={loading}
                     className="flex-1 py-2.5 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5"
                   >
                     <Check size={16} strokeWidth={2.4} />
                     <span>Mark Delivered</span>
+                  </button>
+                </>
+              ) : activeOrderData.status === 'PENDING_CONFIRMATION' ? (
+                <>
+                  <div className="py-2.5 px-3 bg-amber-50 border border-amber-200/80 text-amber-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
+                    <Clock size={16} className="text-amber-600" strokeWidth={2.4} />
+                    <span>Awaiting customer confirmation</span>
+                  </div>
+                  <button
+                    onClick={() => handleUpdateStatus('DELIVERED', `Order ${orderNo} closed and confirmed by Admin!`)}
+                    disabled={loading}
+                    className="flex-1 py-2.5 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                    title="Force complete / close order if customer cannot confirm via app"
+                  >
+                    <Check size={16} strokeWidth={2.4} />
+                    <span>Confirm & Close Order</span>
                   </button>
                 </>
               ) : null}
@@ -818,20 +887,130 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
           </div>
 
           {/* INTERNAL NOTE Section */}
-          <div className="space-y-1.5 pb-4">
-            <label className="text-xs font-bold text-gray-700">
-              Internal note (not shown to customer)
-            </label>
+          <div className="bg-gray-50 border border-gray-200/90 rounded-2xl p-4 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs font-bold text-gray-800 block">
+                  Internal note (not shown to customer)
+                </label>
+                <p className="text-[11px] text-gray-500 font-medium">
+                  Visible to store operators and staff only
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleSaveNote}
+                disabled={savingNote}
+                className="px-3.5 py-1.5 rounded-xl bg-gray-900 hover:bg-black active:bg-gray-950 text-white text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              >
+                {noteSaved ? (
+                  <>
+                    <Check size={13} className="text-emerald-400" />
+                    <span>Saved</span>
+                  </>
+                ) : savingNote ? (
+                  <span>Saving...</span>
+                ) : (
+                  <span>Save note</span>
+                )}
+              </button>
+            </div>
             <textarea
-              rows={2}
+              rows={3}
               value={internalNote}
               onChange={(e) => setInternalNote(e.target.value)}
-              placeholder="e.g. Customer asked to call before arriving"
-              className="w-full p-3 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all font-medium"
+              placeholder="e.g. Customer asked to call before arriving, or ring bell twice"
+              className="w-full p-3 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all font-medium resize-y"
             />
           </div>
         </div>
-      </div>,
+      </div>
+
+      {/* Cancellation Reason Modal */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-gray-100 space-y-4 animate-scale-in">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold shrink-0">
+                  <AlertCircle size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-gray-900 leading-tight">Cancel Order {orderNo}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Customer will receive this cancellation reason</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-2">Select cancellation reason:</label>
+              <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                {[
+                  'Customer requested cancellation',
+                  'Item(s) out of stock',
+                  'Delivery address unreachable / outside area',
+                  'Store closed or high operational rush',
+                  'Payment verification issue',
+                  'Other reason',
+                ].map((reason) => (
+                  <button
+                    key={reason}
+                    type="button"
+                    onClick={() => setCancelPreset(reason)}
+                    className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer border ${
+                      cancelPreset === reason
+                        ? 'bg-rose-50 border-rose-300 text-rose-950 font-bold shadow-2xs'
+                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium'
+                    }`}
+                  >
+                    {reason}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                Additional note / custom reason:
+              </label>
+              <textarea
+                rows={2}
+                value={cancelCustomReason}
+                onChange={(e) => setCancelCustomReason(e.target.value)}
+                placeholder={cancelPreset === 'Other reason' ? 'Please specify reason for customer...' : 'Add extra context for the customer (optional)...'}
+                className="w-full p-2.5 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 font-medium"
+              />
+            </div>
+
+            <div className="flex items-center gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(false)}
+                disabled={cancelling}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                Keep Order
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCancel}
+                disabled={cancelling}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {cancelling ? 'Cancelling...' : 'Confirm & Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>,
     document.body
   );
 }

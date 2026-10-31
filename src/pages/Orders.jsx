@@ -66,7 +66,7 @@ function mapOrderDoc(id, data) {
     statusKey = 'NEW';
   } else if (rawStatus === 'ORDER_ACCEPTED' || rawStatus === 'PACKING' || rawStatus === 'ACCEPTED') {
     statusKey = 'PACKING';
-  } else if (rawStatus === 'OUT_FOR_DELIVERY') {
+  } else if (rawStatus === 'OUT_FOR_DELIVERY' || rawStatus === 'PENDING_CONFIRMATION') {
     statusKey = 'OUT_FOR_DELIVERY';
   } else if (rawStatus === 'DELIVERED') {
     statusKey = 'DELIVERED';
@@ -111,7 +111,7 @@ function mapOrderDoc(id, data) {
     deliveryAcceptanceStatus,
     delayReason,
     deliveryDelay,
-    status: statusKey === 'NEW' ? 'New' : statusKey === 'PACKING' ? 'Packing' : statusKey === 'OUT_FOR_DELIVERY' ? 'Out for delivery' : statusKey === 'DELIVERED' ? 'Delivered' : statusKey === 'CANCELLED' ? 'Cancelled' : 'Disputed',
+    status: rawStatus === 'PENDING_CONFIRMATION' ? 'Awaiting confirmation' : statusKey === 'NEW' ? 'New' : statusKey === 'PACKING' ? 'Packing' : statusKey === 'OUT_FOR_DELIVERY' ? 'Out for delivery' : statusKey === 'DELIVERED' ? 'Delivered' : statusKey === 'CANCELLED' ? 'Cancelled' : 'Disputed',
     statusKey,
     partner,
     placed: formatRelativeTime(createdAt),
@@ -461,9 +461,15 @@ function mapOrderDoc(id, data) {
                       </span>
                     )}
                     {o.statusKey === 'OUT_FOR_DELIVERY' && (
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-cyan-50 text-cyan-700">
-                        On the way
-                      </span>
+                      o.raw?.status === 'PENDING_CONFIRMATION' ? (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700">
+                          Awaiting confirmation
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-cyan-50 text-cyan-700">
+                          On the way
+                        </span>
+                      )
                     )}
                     {o.statusKey === 'DELIVERED' && (
                       <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700">
@@ -635,9 +641,15 @@ function mapOrderDoc(id, data) {
                           </span>
                         )}
                         {o.statusKey === 'OUT_FOR_DELIVERY' && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-cyan-50 text-cyan-700">
-                            Out for delivery
-                          </span>
+                          o.raw?.status === 'PENDING_CONFIRMATION' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700">
+                              Awaiting confirmation
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-cyan-50 text-cyan-700">
+                              Out for delivery
+                            </span>
+                          )
                         )}
                         {o.statusKey === 'DELIVERED' && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 text-emerald-700">

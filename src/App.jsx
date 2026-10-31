@@ -82,6 +82,7 @@ const Settings         = lazyWithRetry(() => import('./pages/Settings'));
 const RefundRequests   = lazyWithRetry(() => import('./pages/RefundRequests'));
 const Issues           = lazyWithRetry(() => import('./pages/Issues'));
 const Feedback         = lazyWithRetry(() => import('./pages/Feedback'));
+const Notifications    = lazyWithRetry(() => import('./pages/Notifications'));
 
 function PageFallback() {
   return (
@@ -160,6 +161,7 @@ function AppShellContent() {
                 <Route path="/ms-club"            element={<MSClub />} />
                 <Route path="/offers"             element={<Offers />}    />
                 <Route path="/push-notifications" element={<PushNotifications />}  />
+                <Route path="/notifications"      element={<Notifications />} />
                 <Route path="/reports"            element={<Reports />} />
                 <Route path="/settings"           element={<Settings />}  />
                 <Route path="/admin-login" element={<Navigate to="/" replace />} />

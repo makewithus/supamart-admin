@@ -9,8 +9,20 @@ export default function Issues() {
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedIssueId, setSelectedIssueId] = useState(null);
-  const [replyText, setReplyText] = useState("Sorry about this. We've issued a refund to your UPI ID.");
+  const [replyText, setReplyText] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+
+  const getDynamicDefaultReply = useCallback((issue, action = null) => {
+    if (!issue) return '';
+    const resType = action || issue.resolutionType || (issue.preferredResolution === 'REDELIVER' || issue.type === 'WRONG_ITEM' ? 'REDELIVER' : 'REFUND');
+    if (resType === 'REDELIVER') {
+      return `We apologize for the inconvenience with order #${issue.orderNo || ''}. We have arranged a redelivery of your item(s). Our delivery partner is bringing the replacement shortly.`;
+    }
+    if (resType === 'REJECT') {
+      return `We reviewed your reported issue for order #${issue.orderNo || ''}. Unfortunately, we cannot approve a refund or replacement for this request.`;
+    }
+    return `Sorry about this. We've approved and processed a refund of ₹${issue.refundAmount || issue.orderTotal || 0} for your reported issue.`;
+  }, []);
 
   const mergeIssues = useCallback((incomingList) => {
     setIssues((prev) => {
@@ -143,17 +155,47 @@ export default function Issues() {
     return filteredIssues.find((i) => i.id === selectedIssueId) || filteredIssues[0];
   }, [filteredIssues, selectedIssueId]);
 
+  useEffect(() => {
+    if (activeIssue) {
+      const initialAction = activeIssue.resolutionType || (activeIssue.preferredResolution === 'REDELIVER' || activeIssue.type === 'WRONG_ITEM' ? 'REDELIVER' : 'REFUND');
+      setReplyText(getDynamicDefaultReply(activeIssue, initialAction));
+    }
+  }, [activeIssue?.id, activeIssue?.resolutionType, getDynamicDefaultReply]);
+
   const handleResolveAction = async (actionType) => {
     if (!activeIssue) return;
     setActionLoading(true);
+    let messageToSend = replyText.trim();
+    if (actionType === 'REDELIVER') {
+      if (!messageToSend || messageToSend.includes('refund of ₹') || messageToSend === getDynamicDefaultReply(activeIssue, 'REFUND') || messageToSend === getDynamicDefaultReply(activeIssue, 'REJECT')) {
+        messageToSend = getDynamicDefaultReply(activeIssue, 'REDELIVER');
+        setReplyText(messageToSend);
+      }
+    } else if (actionType === 'REFUND') {
+      if (!messageToSend || messageToSend.includes('redelivery') || messageToSend === getDynamicDefaultReply(activeIssue, 'REDELIVER') || messageToSend === getDynamicDefaultReply(activeIssue, 'REJECT')) {
+        messageToSend = getDynamicDefaultReply(activeIssue, 'REFUND');
+        setReplyText(messageToSend);
+      }
+    } else if (actionType === 'REJECT') {
+      if (!messageToSend || messageToSend === getDynamicDefaultReply(activeIssue, 'REFUND') || messageToSend === getDynamicDefaultReply(activeIssue, 'REDELIVER')) {
+        messageToSend = getDynamicDefaultReply(activeIssue, 'REJECT');
+        setReplyText(messageToSend);
+      }
+    }
     try {
       await apiPatch(`/issues/${activeIssue.id}/status`, {
         status: actionType === 'REJECT' ? 'REJECTED' : 'RESOLVED',
         resolutionType: actionType,
-        resolutionNotes: replyText,
+        resolutionNotes: messageToSend,
       });
       fetchIssuesFromApi();
-      toast.success(actionType === 'REJECT' ? 'Issue claim rejected' : 'Issue marked resolved');
+      toast.success(
+        actionType === 'REJECT'
+          ? 'Issue claim rejected'
+          : actionType === 'REDELIVER'
+          ? 'Redelivery confirmed & scheduled'
+          : 'Refund approved & issued'
+      );
     } catch (err) {
       toast.error(err.message || 'Failed to update issue');
     } finally {
@@ -331,11 +373,22 @@ export default function Issues() {
               </div>
 
               {/* Heading & Meta */}
-              <div>
-                <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">
-                  {activeIssue.title}
-                </h2>
-                <p className="text-xs text-gray-400 mt-1 font-medium">
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">
+                    {activeIssue.title}
+                  </h2>
+                  {activeIssue.resolutionType === 'REDELIVER' || activeIssue.preferredResolution === 'REDELIVER' ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                      Customer Requested: Redelivery
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                      Customer Requested: Refund
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 font-medium">
                   Order #{activeIssue.orderNo} · {activeIssue.customerName} · reported {activeIssue.timeAgo}
                 </p>
               </div>
@@ -347,8 +400,30 @@ export default function Issues() {
 
               {/* Previous Admin Resolution / Reply Note */}
               {activeIssue.resolutionNotes && (
-                <div className="bg-emerald-50 rounded-xl p-3.5 border border-emerald-200/80 text-xs text-emerald-900 leading-relaxed">
-                  <span className="font-bold text-emerald-800">Shop Response: </span>
+                <div
+                  className={`rounded-xl p-3.5 border text-xs leading-relaxed ${
+                    activeIssue.resolutionType === 'REDELIVER'
+                      ? 'bg-blue-50 border-blue-200/80 text-blue-900'
+                      : activeIssue.status === 'REJECTED'
+                      ? 'bg-red-50 border-red-200/80 text-red-900'
+                      : 'bg-emerald-50 border-emerald-200/80 text-emerald-900'
+                  }`}
+                >
+                  <span
+                    className={`font-bold ${
+                      activeIssue.resolutionType === 'REDELIVER'
+                        ? 'text-blue-800'
+                        : activeIssue.status === 'REJECTED'
+                        ? 'text-red-800'
+                        : 'text-emerald-800'
+                    }`}
+                  >
+                    {activeIssue.resolutionType === 'REDELIVER'
+                      ? 'Shop Response (Redelivery Arranged): '
+                      : activeIssue.status === 'REJECTED'
+                      ? 'Shop Response (Claim Rejected): '
+                      : 'Shop Response: '}
+                  </span>
                   {activeIssue.resolutionNotes}
                 </div>
               )}
@@ -372,7 +447,7 @@ export default function Issues() {
               )}
 
               {/* Resolve by section */}
-              {activeIssue.status === 'OPEN' && (
+              {activeIssue.status === 'OPEN' ? (
                 <div>
                   <p className="text-xs font-bold text-gray-700 mb-2.5">Resolve by</p>
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2.5">
@@ -388,7 +463,7 @@ export default function Issues() {
                       type="button"
                       disabled={actionLoading}
                       onClick={() => handleResolveAction('REDELIVER')}
-                      className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold text-xs sm:text-sm px-5 py-2.5 rounded-xl shadow-2xs transition-all disabled:opacity-60 cursor-pointer text-center"
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm px-5 py-2.5 rounded-xl shadow-2xs transition-all disabled:opacity-60 cursor-pointer text-center"
                     >
                       Redeliver item
                     </button>
@@ -402,11 +477,70 @@ export default function Issues() {
                     </button>
                   </div>
                 </div>
+              ) : (
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-gray-700">Resolution Status</p>
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md border ${
+                      activeIssue.resolutionType === 'REDELIVER'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : activeIssue.status === 'REJECTED'
+                        ? 'bg-red-50 text-red-700 border-red-200'
+                        : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    }`}>
+                      {activeIssue.resolutionType === 'REDELIVER'
+                        ? 'Redelivery Arranged'
+                        : activeIssue.status === 'REJECTED'
+                        ? 'Claim Rejected'
+                        : 'Refund Approved'}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span className="text-[11px] text-gray-500 font-medium">Actions:</span>
+                    <button
+                      type="button"
+                      disabled={actionLoading}
+                      onClick={() => handleResolveAction('REDELIVER')}
+                      className="bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                    >
+                      {activeIssue.resolutionType === 'REDELIVER' ? 'Re-send Redelivery Notification' : 'Switch to Redeliver item'}
+                    </button>
+                    {activeIssue.resolutionType !== 'REFUND' && (
+                      <button
+                        type="button"
+                        disabled={actionLoading}
+                        onClick={() => handleResolveAction('REFUND')}
+                        className="bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 text-xs font-bold px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                      >
+                        Switch to Refund
+                      </button>
+                    )}
+                  </div>
+                </div>
               )}
 
               {/* Reply to customer section */}
               <div>
-                <p className="text-xs font-bold text-gray-700 mb-2">Reply to customer</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-bold text-gray-700">Reply to customer</p>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setReplyText(getDynamicDefaultReply(activeIssue, 'REDELIVER'))}
+                      className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+                    >
+                      Redelivery Template
+                    </button>
+                    <span className="text-gray-300">·</span>
+                    <button
+                      type="button"
+                      onClick={() => setReplyText(getDynamicDefaultReply(activeIssue, 'REFUND'))}
+                      className="text-[10px] font-bold text-emerald-700 hover:underline cursor-pointer"
+                    >
+                      Refund Template
+                    </button>
+                  </div>
+                </div>
                 <div className="space-y-2">
                   <textarea
                     value={replyText}

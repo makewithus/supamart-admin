@@ -39,6 +39,7 @@ const NAV_GROUPS = [
       { to: '/payments', aliases: ['/accounts'], icon: CreditCard, label: 'Payments', badgeType: 'payments', badgeColor: 'amber' },
       { to: '/refunds', icon: RotateCcw, label: 'Refunds', badgeType: 'refunds', badgeColor: 'amber' },
       { to: '/issues', icon: AlertCircle, label: 'Issues', badgeType: 'issues', badgeColor: 'red' },
+      { to: '/notifications', aliases: ['/alerts'], icon: Bell, label: 'Notifications' },
     ],
   },
   {

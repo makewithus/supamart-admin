@@ -52,7 +52,7 @@ export default function Products() {
       if (data) {
         if (data.categories) setCategories(data.categories);
         if (data.brands) setBrands(data.brands);
-        if (data.products && !productSnapshotReadyRef.current) setProducts(data.products);
+        if (data.products) setProducts(data.products);
         setLoading(false);
         return;
       }
@@ -79,19 +79,9 @@ export default function Products() {
 
   useEffect(() => {
     loadCatalog();
+    const interval = setInterval(loadCatalog, 30000);
+    return () => clearInterval(interval);
   }, [loadCatalog]);
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, 'products'),
-      (snapshot) => {
-        productSnapshotReadyRef.current = true;
-        setProducts(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-      },
-      (error) => console.warn('Live product updates paused:', error?.message || error)
-    );
-    return () => unsubscribe();
-  }, []);
 
   const categoryNameById = useMemo(
     () => Object.fromEntries(categories.map((c) => [c.id, c.name])),

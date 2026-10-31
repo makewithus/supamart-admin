@@ -23,7 +23,6 @@ export default function PushNotifications() {
   const [message, setMessage] = useState('');
   const [sendTo, setSendTo] = useState('ALL');
   const [when, setWhen] = useState('Send now');
-  const [opens, setOpens] = useState('Home screen');
 
   const [users, setUsers] = useState([]);
   const [sentList, setSentList] = useState([]);
@@ -112,7 +111,7 @@ export default function PushNotifications() {
         title: title.trim(),
         body: message.trim(),
         audience: audienceLabel,
-        targetScreen: opens,
+        targetScreen: 'In-App Notification Panel',
       }, { timeout: 45_000 });
 
       try {
@@ -252,27 +251,7 @@ export default function PushNotifications() {
               </div>
             </div>
 
-            {/* Opens */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5">Opens</label>
-              <div className="relative">
-                <select
-                  value={opens}
-                  onChange={(e) => setOpens(e.target.value)}
-                  className="w-full appearance-none px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white text-xs sm:text-sm text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 pr-8 cursor-pointer"
-                >
-                  <option value="Home screen">Home screen</option>
-                  <option value="Offers & banners">Offers & banners</option>
-                  <option value="Vegetables Category">Vegetables Category</option>
-                  <option value="MS Club Screen">MS Club Screen</option>
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-              </div>
-            </div>
+
 
             {/* Action Buttons */}
             <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2.5 sm:gap-3">
@@ -346,7 +325,7 @@ export default function PushNotifications() {
                     DELIVERED
                   </th>
                   <th className="py-3.5 px-6 text-[11px] font-bold tracking-wider text-gray-400 uppercase text-right">
-                    TARGET
+                    DESTINATION
                   </th>
                 </tr>
               </thead>
@@ -374,7 +353,7 @@ export default function PushNotifications() {
                         {item.delivered || 0} devices
                       </td>
                       <td className="py-3.5 px-6 text-gray-600 font-medium text-right">
-                        {item.targetScreen || 'Home screen'}
+                        {item.targetScreen || 'In-App Notifications'}
                       </td>
                     </tr>
                   ))
@@ -402,7 +381,7 @@ export default function PushNotifications() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-[11px] text-gray-400 pt-1">
-                    <span>{item.audience || 'All customers'} · {item.targetScreen || 'Home'}</span>
+                    <span>{item.audience || 'All customers'} · {item.targetScreen || 'Notification Panel'}</span>
                     <span>{formatSentDate(item.createdAt)}</span>
                   </div>
                 </div>

@@ -282,6 +282,20 @@ export default function TopBar({ onOpenMobileMenu }) {
                   </>
                 )}
               </div>
+              {/* Footer: View all notifications page */}
+              <div className="p-2 border-t border-gray-100 bg-gray-50/70">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigate('/notifications');
+                    setNotificationsOpen(false);
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-white hover:bg-gray-50 active:bg-gray-100 border border-gray-200 text-[#0A7C47] hover:text-emerald-800 text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <span>View all notifications & alerts</span>
+                  <span aria-hidden="true">→</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
