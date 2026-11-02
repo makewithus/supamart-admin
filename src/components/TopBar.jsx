@@ -22,13 +22,23 @@ export default function TopBar({ onOpenMobileMenu }) {
   // so this admin client does not attempt a Firestore write forbidden by rules.
   useEffect(() => {
     let active = true;
-    apiGet('/config').then((data) => {
-      if (!active) return;
-      const open = data.isStoreOpen !== false && data.storeOpen !== false;
-      setStoreOpen(open);
-      localStorage.setItem('ms_admin_store_open', String(open));
-    }).catch((err) => console.error('Failed to load store status:', err));
-    return () => { active = false; };
+    const fetchStatus = () => {
+      apiGet('/config')
+        .then((data) => {
+          if (!active) return;
+          const open = data.isStoreOpen !== false && data.storeOpen !== false;
+          setStoreOpen(open);
+          localStorage.setItem('ms_admin_store_open', String(open));
+        })
+        .catch((err) => console.error('Failed to load store status:', err));
+    };
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 4000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {

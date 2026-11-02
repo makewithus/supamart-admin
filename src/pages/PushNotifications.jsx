@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Send, Smartphone, Bell, Clock, CheckCircle2, Users, AlertCircle, Sparkles } from 'lucide-react';
 import { db } from '../config/firebase';
-import { collection, onSnapshot, query, orderBy, getDocs, limit } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, getDocs, limit, where } from 'firebase/firestore';
 import { apiPost, apiGet } from '../services/api';
 import toast from 'react-hot-toast';
 import { playNotificationSound, getAudioContext } from '../utils/notificationSound';
@@ -25,11 +25,12 @@ export default function PushNotifications() {
   const [when, setWhen] = useState('Send now');
 
   const [users, setUsers] = useState([]);
+  const [orders, setOrders] = useState([]);
   const [sentList, setSentList] = useState([]);
   const [sending, setSending] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  // Fetch users once on mount to compute actual reachable token counts (no continuous listener)
+  // Fetch users and recent orders on mount to compute actual logical audience counts
   useEffect(() => {
     let active = true;
     getDocs(collection(db, 'users'))
@@ -38,6 +39,22 @@ export default function PushNotifications() {
         setUsers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       })
       .catch((e) => console.error('Error loading users:', e));
+
+    const sevenDaysAgo = Date.now() - 7 * 86400000;
+    getDocs(query(collection(db, 'orders'), where('createdAt', '>=', sevenDaysAgo)))
+      .then((snap) => {
+        if (!active) return;
+        setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      })
+      .catch(() => {
+        getDocs(query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(100)))
+          .then((snap) => {
+            if (!active) return;
+            setOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+          })
+          .catch(() => {});
+      });
+
     return () => { active = false; };
   }, []);
 
@@ -65,29 +82,76 @@ export default function PushNotifications() {
     }
   }, []);
 
-  // Calculate reachable stats dynamically
+  // Calculate logical audience and reachable stats dynamically
   const audienceStats = useMemo(() => {
-    let totalReachable = 0;
-    let msClubReachable = 0;
-    let newUsersReachable = 0;
+    const sevenDaysAgo = Date.now() - 7 * 86400000;
+    const activeShopperIds = new Set(
+      orders
+        .filter((o) => (o.createdAt || 0) >= sevenDaysAgo && o.status !== 'CANCELLED')
+        .map((o) => o.userId)
+        .filter(Boolean)
+    );
+
+    let totalPushDevices = 0;
+    let msClubCount = 0;
+    let newUsersCount = 0;
+    let activeShoppersCount = 0;
 
     users.forEach((u) => {
-      const hasToken = Array.isArray(u.fcmTokens) && u.fcmTokens.length > 0;
-      const notOptedOut = u.offerNotificationsEnabled !== false;
-      if (hasToken && notOptedOut) {
-        totalReachable++;
-        if (u.isMSClubMember) msClubReachable++;
-        if (!u.totalOrders || u.totalOrders === 0) newUsersReachable++;
+      const fcmTokens = Array.isArray(u.fcmTokens) ? u.fcmTokens : [];
+      if (fcmTokens.length > 0 && u.offerNotificationsEnabled !== false) {
+        totalPushDevices += fcmTokens.length;
+      }
+      if (u.isMSClubMember || u.clubMember) {
+        msClubCount++;
+      }
+      if (!u.totalOrders || u.totalOrders === 0) {
+        newUsersCount++;
+      }
+      if (activeShopperIds.has(u.id) || (u.lastOrderAt && u.lastOrderAt >= sevenDaysAgo)) {
+        activeShoppersCount++;
       }
     });
 
     return {
       totalUsers: users.length,
-      totalReachable,
-      msClubReachable,
-      newUsersReachable,
+      totalPushDevices,
+      activeShoppersCount: Math.max(activeShopperIds.size, activeShoppersCount),
+      msClubCount,
+      newUsersCount,
     };
-  }, [users]);
+  }, [users, orders]);
+
+  const AUDIENCE_OPTIONS = useMemo(() => [
+    {
+      id: 'ALL',
+      label: 'All Customers',
+      count: audienceStats.totalUsers,
+      description: 'Reaches all registered customer accounts and in-app inboxes',
+    },
+    {
+      id: 'ACTIVE',
+      label: 'Active Shoppers (Last 7 Days)',
+      count: audienceStats.activeShoppersCount,
+      description: 'Customers who placed an order within the last 7 days',
+    },
+    {
+      id: 'MSCLUB',
+      label: 'MS Club Members',
+      count: audienceStats.msClubCount,
+      description: 'VIP and loyalty membership subscribers',
+    },
+    {
+      id: 'NEW',
+      label: 'New Customers',
+      count: audienceStats.newUsersCount,
+      description: 'Registered users who haven’t placed an order yet',
+    },
+  ], [audienceStats]);
+
+  const selectedAudience = useMemo(() => {
+    return AUDIENCE_OPTIONS.find((a) => a.id === sendTo) || AUDIENCE_OPTIONS[0];
+  }, [AUDIENCE_OPTIONS, sendTo]);
 
   const handleSendNotification = async (e) => {
     e.preventDefault();
@@ -111,6 +175,7 @@ export default function PushNotifications() {
         title: title.trim(),
         body: message.trim(),
         audience: audienceLabel,
+        audienceKey: sendTo,
         targetScreen: 'In-App Notification Panel',
       }, { timeout: 45_000 });
 
@@ -120,9 +185,9 @@ export default function PushNotifications() {
       } catch (_) {}
 
       toast.success(
-        res.sent > 0
-          ? `Push notification sent to ${res.sent} registered devices!`
-          : 'Saved to customer in-app inboxes. No mobile push tokens are registered yet.'
+        `Broadcast sent to ${res.inboxCount ?? audienceStats.totalUsers} customer inboxes${
+          res.sent > 0 ? ` (${res.sent} mobile push devices)` : ''
+        }!`
       );
       setTitle('');
       setMessage('');
@@ -165,7 +230,7 @@ export default function PushNotifications() {
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">Push notifications</h1>
         <p className="text-xs sm:text-sm text-gray-500 mt-1">
-          Send offers and store announcements to customers who allowed notifications · {audienceStats.totalReachable} reachable devices
+          Broadcast offers, alerts, and store announcements to customer notification panels ({audienceStats.totalUsers} registered customers)
         </p>
       </div>
 
@@ -209,17 +274,18 @@ export default function PushNotifications() {
             {/* Dropdowns Row: Send to & When */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">Send to</label>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">Target Audience</label>
                 <div className="relative">
                   <select
                     value={sendTo}
                     onChange={(e) => setSendTo(e.target.value)}
-                    className="w-full appearance-none px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white text-xs sm:text-sm text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 pr-8 cursor-pointer"
+                    className="w-full appearance-none px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white text-xs sm:text-sm text-gray-800 font-medium focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 pr-9 cursor-pointer shadow-2xs"
                   >
-                    <option value="ALL">All customers ({audienceStats.totalReachable} reachable)</option>
-                    <option value="ACTIVE">Active shoppers (last 7 days)</option>
-                    <option value="MSCLUB">MS Club members ({audienceStats.msClubReachable} reachable)</option>
-                    <option value="NEW">New customers ({audienceStats.newUsersReachable} reachable)</option>
+                    {AUDIENCE_OPTIONS.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.label} ({opt.count} {opt.count === 1 ? 'customer' : 'customers'})
+                      </option>
+                    ))}
                   </select>
                   <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -227,17 +293,37 @@ export default function PushNotifications() {
                     </svg>
                   </div>
                 </div>
+
+                {/* Audience Delivery Reach Card */}
+                <div className="mt-2.5 p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/70 flex items-start gap-2.5">
+                  <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
+                    <Users size={12} className="text-emerald-700" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <span className="text-xs font-bold text-gray-900">
+                        {selectedAudience.label} ({selectedAudience.count} recipients)
+                      </span>
+                      <span className="text-[10px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded">
+                        100% In-App Reachable
+                      </span>
+                    </div>
+                    <p className="text-[11.5px] text-emerald-900/80 mt-0.5 leading-relaxed">
+                      {selectedAudience.description}. Notifications are saved to customer inboxes in real-time and post system notification banners on their devices.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">When</label>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">Delivery Schedule</label>
                 <div className="relative">
                   <select
                     value={when}
                     onChange={(e) => setWhen(e.target.value)}
-                    className="w-full appearance-none px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white text-xs sm:text-sm text-gray-800 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 pr-8 cursor-pointer"
+                    className="w-full appearance-none px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white text-xs sm:text-sm text-gray-800 font-medium focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 pr-9 cursor-pointer shadow-2xs"
                   >
-                    <option value="Send now">Send now</option>
+                    <option value="Send now">Send immediately</option>
                     <option value="Schedule for 3:00 PM today">Schedule for 3:00 PM today</option>
                     <option value="Schedule for 6:00 PM today">Schedule for 6:00 PM today</option>
                     <option value="Tomorrow morning 9:00 AM">Tomorrow morning 9:00 AM</option>

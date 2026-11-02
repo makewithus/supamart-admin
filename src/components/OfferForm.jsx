@@ -172,7 +172,7 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
         scope:       formData.scope,
         scopeId:     formData.scope === 'CART' ? null : (formData.scopeId || null),
         isActive:    formData.isActive,
-        maxDiscount: formData.kind === 'PERCENT' && formData.maxValue ? Number(formData.maxValue) : null,
+        maxDiscount: formData.maxValue ? Number(formData.maxValue) : null,
         minValue:    formData.minValue ? Number(formData.minValue) : 0,
         ...(imageUrl !== undefined && { image: imageUrl }),
       };
@@ -314,7 +314,6 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
               setFormData({
                 ...formData,
                 kind: v,
-                maxValue: v === 'FLAT' ? '' : formData.maxValue,
               })
             }
             options={KIND_OPTIONS}
@@ -342,19 +341,16 @@ export default function OfferForm({ offer, onSuccess, onCancel }) {
         <div>
           <label className="block text-xs font-semibold text-neutral-500 mb-1">
             Max Discount Cap (₹)
-            {formData.kind === 'FLAT' && (
-              <span className="text-[11px] font-normal text-neutral-400 ml-1.5">(Percentage only)</span>
-            )}
+            <span className="text-[11px] font-normal text-neutral-400 ml-1.5">(Optional limit)</span>
           </label>
           <input
             type="number"
             step="0.01"
             min="0"
-            disabled={formData.kind === 'FLAT'}
-            className={`${inputClass} ${formData.kind === 'FLAT' ? 'bg-neutral-100 text-neutral-400 cursor-not-allowed border-dashed' : ''}`}
-            value={formData.kind === 'FLAT' ? '' : formData.maxValue}
+            className={inputClass}
+            value={formData.maxValue}
             onChange={e => setFormData({ ...formData, maxValue: e.target.value })}
-            placeholder={formData.kind === 'FLAT' ? 'Not applicable for flat discount' : 'e.g. 100 (Cap on % discount)'}
+            placeholder={formData.kind === 'PERCENT' ? 'e.g. 100 (Cap on % discount)' : 'e.g. 100 (Cap on flat discount)'}
           />
         </div>
         <div>

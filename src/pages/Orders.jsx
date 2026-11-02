@@ -79,7 +79,10 @@ function mapOrderDoc(id, data) {
   // Payment classification
   let paymentType = 'paid';
   let paymentText = 'Paid · UPI';
-  if (data.paymentStatus === 'AWAITING_CONFIRMATION' || data.paymentStatus === 'PENDING') {
+  if (data.isRedelivery) {
+    paymentType = 'free_replacement';
+    paymentText = 'Free Replacement';
+  } else if (data.paymentStatus === 'AWAITING_CONFIRMATION' || data.paymentStatus === 'PENDING') {
     paymentType = 'verify';
     paymentText = 'Verify UTR';
   } else if (data.paymentStatus === 'FAILED') {
@@ -448,17 +451,38 @@ function mapOrderDoc(id, data) {
                 className="p-3.5 hover:bg-gray-50/70 transition-colors cursor-pointer space-y-2.5"
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono font-bold text-gray-900 text-sm">#{o.orderNo}</span>
-                    {o.statusKey === 'NEW' && (
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-600">
-                        New
+                    {o.raw?.isRedelivery && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200/60">
+                        Replacement (#{o.raw.originalOrderNo || 'Original'})
                       </span>
                     )}
-                    {o.statusKey === 'PACKING' && (
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700">
-                        Packing
+                    {o.raw?.isRedelivery && o.raw?.redeliveryStatus === 'AWAITING_CUSTOMER_CONFIRMATION' ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                        Awaiting Customer
                       </span>
+                    ) : o.raw?.isRedelivery && o.raw?.redeliveryStatus === 'RESCHEDULED' ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                        Rescheduled
+                      </span>
+                    ) : o.raw?.isRedelivery && o.raw?.redeliveryStatus === 'DECLINED' ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        Declined
+                      </span>
+                    ) : (
+                      <>
+                        {o.statusKey === 'NEW' && (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-600">
+                            New
+                          </span>
+                        )}
+                        {o.statusKey === 'PACKING' && (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700">
+                            Packing
+                          </span>
+                        )}
+                      </>
                     )}
                     {o.statusKey === 'OUT_FOR_DELIVERY' && (
                       o.raw?.status === 'PENDING_CONFIRMATION' ? (
@@ -498,6 +522,11 @@ function mapOrderDoc(id, data) {
 
                 <div className="flex items-center justify-between pt-1 border-t border-gray-50 text-[11px]">
                   <div>
+                    {o.paymentType === 'free_replacement' && (
+                      <span className="px-2 py-0.5 rounded-md font-bold bg-purple-50 text-purple-700 border border-purple-200/60">
+                        Free Replacement
+                      </span>
+                    )}
                     {o.paymentType === 'verify' && (
                       <span className="px-2 py-0.5 rounded-md font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
                         Verify UTR
@@ -588,7 +617,14 @@ function mapOrderDoc(id, data) {
                       </td>
 
                       <td className="py-3 px-3 font-mono font-bold text-gray-900">
-                        #{o.orderNo}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>#{o.orderNo}</span>
+                          {o.raw?.isRedelivery && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200/60 whitespace-nowrap">
+                              Replacement (#{o.raw.originalOrderNo || 'Original'})
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-3 px-3">
@@ -607,6 +643,11 @@ function mapOrderDoc(id, data) {
                       </td>
 
                       <td className="py-3 px-3">
+                        {o.paymentType === 'free_replacement' && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200/60">
+                            Free Replacement
+                          </span>
+                        )}
                         {o.paymentType === 'verify' && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200/60">
                             Verify UTR
@@ -630,16 +671,27 @@ function mapOrderDoc(id, data) {
                       </td>
 
                       <td className="py-3 px-3">
-                        {o.statusKey === 'NEW' && (
+                        {o.raw?.isRedelivery && o.raw?.redeliveryStatus === 'AWAITING_CUSTOMER_CONFIRMATION' ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                            Awaiting Customer
+                          </span>
+                        ) : o.raw?.isRedelivery && o.raw?.redeliveryStatus === 'RESCHEDULED' ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                            Rescheduled
+                          </span>
+                        ) : o.raw?.isRedelivery && o.raw?.redeliveryStatus === 'DECLINED' ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                            Declined
+                          </span>
+                        ) : o.statusKey === 'NEW' ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-50 text-rose-600">
                             New
                           </span>
-                        )}
-                        {o.statusKey === 'PACKING' && (
+                        ) : o.statusKey === 'PACKING' ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700">
                             Packing
                           </span>
-                        )}
+                        ) : null}
                         {o.statusKey === 'OUT_FOR_DELIVERY' && (
                           o.raw?.status === 'PENDING_CONFIRMATION' ? (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700">
@@ -701,12 +753,18 @@ function mapOrderDoc(id, data) {
                             </div>
 
                             <select
-                              disabled={o.statusKey === 'NEW'}
-                              title={o.statusKey === 'NEW' ? 'Accept / approve order first before assigning partner' : ''}
+                              disabled={o.statusKey === 'NEW' || o.paymentType === 'verify'}
+                              title={
+                                o.paymentType === 'verify'
+                                  ? 'Verify payment first before assigning partner'
+                                  : o.statusKey === 'NEW'
+                                  ? 'Accept / approve order first before assigning partner'
+                                  : ''
+                              }
                               value={o.deliveryAcceptanceStatus === 'REJECTED' ? '' : (o.assignedPartnerId || '')}
                               onChange={(e) => handleAssignPartner(o.id, e.target.value)}
                               className={`text-[11px] font-semibold py-1 px-1.5 rounded-lg focus:outline-none focus:border-emerald-600 focus:bg-white shadow-2xs border ${
-                                o.statusKey === 'NEW'
+                                o.statusKey === 'NEW' || o.paymentType === 'verify'
                                   ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-75'
                                   : o.deliveryAcceptanceStatus === 'REJECTED'
                                   ? 'bg-rose-50 border-rose-300 text-rose-900 font-bold cursor-pointer'
@@ -714,7 +772,9 @@ function mapOrderDoc(id, data) {
                               }`}
                             >
                               <option value="">
-                                {o.statusKey === 'NEW'
+                                {o.paymentType === 'verify'
+                                  ? 'Verify payment first...'
+                                  : o.statusKey === 'NEW'
                                   ? 'Approve order first...'
                                   : o.deliveryAcceptanceStatus === 'REJECTED'
                                   ? 'Re-assign new partner...'

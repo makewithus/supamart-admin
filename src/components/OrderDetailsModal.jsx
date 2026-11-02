@@ -3,10 +3,10 @@ import { createPortal } from 'react-dom';
 import {
   X, Printer, Phone, MessageSquare, Check,
   CheckCircle2, XCircle, AlertCircle, Clock, Send,
-  Truck, Star
+  Truck, Star, Calendar, RefreshCw, RotateCcw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { apiPatch } from '../services/api';
+import { apiPatch, apiPost } from '../services/api';
 import productImages from '../utils/productImages';
 import { db } from '../config/firebase';
 import { doc, onSnapshot, collection } from 'firebase/firestore';
@@ -38,11 +38,29 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
   const [assigningPartner, setAssigningPartner] = useState(false);
   const [internalNote, setInternalNote] = useState(activeOrderData.adminNote || '');
   const [savingNote, setSavingNote] = useState(false);
+  const [sendingReminder, setSendingReminder] = useState(false);
+
+  const handleSendRedeliveryReminder = async () => {
+    if (!order.id) return;
+    setSendingReminder(true);
+    try {
+      await apiPost(`/orders/${order.id}/redelivery/reminder`);
+      toast.success('Reminder notification sent to customer!');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to send reminder');
+    } finally {
+      setSendingReminder(false);
+    }
+  };
   const [noteSaved, setNoteSaved] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelPreset, setCancelPreset] = useState('Customer requested cancellation');
   const [cancelCustomReason, setCancelCustomReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
+  const [showRedeliveryModal, setShowRedeliveryModal] = useState(false);
+  const [redeliveryPreset, setRedeliveryPreset] = useState('Items damaged in transit');
+  const [redeliveryCustomReason, setRedeliveryCustomReason] = useState('');
+  const [initiatingRedelivery, setInitiatingRedelivery] = useState(false);
   const [delayOpen, setDelayOpen] = useState(false);
   const [delayMins, setDelayMins] = useState('+20 mins');
   const [delayReasonText, setDelayReasonText] = useState(activeOrderData.delayReason || '');
@@ -164,6 +182,10 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
   };
 
   const handleAcceptOrder = async () => {
+    if (activeOrderData.paymentMethod !== 'COD' && activeOrderData.paymentStatus !== 'PAID') {
+      toast.error('Payment must be verified and approved first before approving this order. Please verify payment first.');
+      return;
+    }
     setLoading(true);
     try {
       if (order.id && !order.id.startsWith('#')) {
@@ -223,6 +245,29 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
     }
   };
 
+  const handleInitiateRedelivery = async () => {
+    if (!order.id || order.id.startsWith('#')) return;
+    const finalReason = redeliveryPreset === 'Other reason'
+      ? (redeliveryCustomReason.trim() || 'Admin initiated replacement')
+      : (redeliveryCustomReason.trim() ? `${redeliveryPreset} — ${redeliveryCustomReason.trim()}` : redeliveryPreset);
+
+    setInitiatingRedelivery(true);
+    try {
+      const res = await apiPost(`/orders/${order.id}/redelivery`, {
+        reason: finalReason,
+        adminNotes: `Admin initiated replacement for Order #${orderNo}: ${finalReason}`,
+      });
+      toast.success(`Free replacement Order #${res.data?.orderNo || ''} created! Customer notified.`);
+      setShowRedeliveryModal(false);
+      onSuccess?.();
+      onClose();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to initiate redelivery');
+    } finally {
+      setInitiatingRedelivery(false);
+    }
+  };
+
   const handleSaveNote = async () => {
     if (!order.id || order.id.startsWith('#')) return;
     setSavingNote(true);
@@ -244,8 +289,9 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
       if (order.id && !order.id.startsWith('#')) {
         await apiPatch(`/orders/${order.id}/mark-paid`);
       }
-      toast.success('Payment verified and marked as PAID.');
+      toast.success('Payment verified and order approved!');
       onSuccess?.();
+      onClose();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed to verify payment');
     } finally {
@@ -338,9 +384,15 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
               <span className="text-lg sm:text-xl font-black text-gray-900 tracking-tight">
                 {orderNo}
               </span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold bg-rose-50 text-rose-600">
-                {order.status === 'ORDER_PLACED' || !order.status ? 'New' : order.status}
-              </span>
+              {activeOrderData.isRedelivery ? (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                  Free Replacement
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold bg-rose-50 text-rose-600">
+                  {order.status === 'ORDER_PLACED' || !order.status ? 'New' : order.status}
+                </span>
+              )}
             </div>
             <p className="text-[11px] sm:text-xs font-semibold text-gray-400 mt-0.5 sm:mt-1">
               {placedTime} · Instant Delivery
@@ -383,6 +435,98 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                 <span className="font-bold">Reason: </span>
                 {activeOrderData.cancelReason || activeOrderData.cancellationReason || 'No reason specified'}
               </p>
+            </div>
+          )}
+
+          {/* Linked Free Replacement Banner (if this original order has an arranged replacement) */}
+          {!activeOrderData.isRedelivery && (activeOrderData.hasRedelivery || activeOrderData.replacementOrderNo) && (
+            <div className="p-3 bg-purple-50/90 border border-purple-200/90 rounded-xl flex items-center justify-between text-xs text-purple-900 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <RotateCcw size={16} className="text-purple-600 shrink-0" />
+                <div>
+                  <span className="font-extrabold">Free Replacement Arranged: </span>
+                  <span className="font-bold underline">Order #{activeOrderData.replacementOrderNo || 'Replacement'}</span>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 bg-purple-200 text-purple-900 rounded text-[10px] font-black uppercase tracking-wider">
+                Replacement Active
+              </span>
+            </div>
+          )}
+
+          {/* Free Replacement / Redelivery Status Banner */}
+          {activeOrderData.isRedelivery && (
+            <div className="p-3.5 bg-gradient-to-r from-purple-50 via-indigo-50 to-emerald-50 border border-purple-200/80 rounded-2xl shadow-2xs space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-700 text-white shadow-xs">
+                    Free Replacement
+                  </span>
+                  <span className="text-xs font-bold text-gray-800">
+                    Linked to Order #{activeOrderData.originalOrderNo || 'Original'}
+                  </span>
+                </div>
+                {activeOrderData.issueId && (
+                  <span className="text-[10px] font-mono font-bold text-purple-700 bg-white/80 px-2 py-0.5 rounded-md border border-purple-200">
+                    Issue #{String(activeOrderData.issueId).slice(-6)}
+                  </span>
+                )}
+              </div>
+
+              {/* Customer Availability State Banner */}
+              {activeOrderData.redeliveryStatus === 'AWAITING_CUSTOMER_CONFIRMATION' && (
+                <div className="p-2.5 bg-amber-50/90 border border-amber-200 rounded-xl space-y-2">
+                  <div className="flex items-start gap-2">
+                    <Clock size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-900 leading-snug">
+                      <span className="font-extrabold">Awaiting Customer Confirmation:</span> Customer received a notification and popup in app to confirm availability. <span className="font-bold underline">Do not dispatch automatically.</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-amber-200/60 text-[11px]">
+                    <span className="text-amber-800 font-medium">
+                      {activeOrderData.customerAvailability?.remindedAt ? `Reminder sent ${new Date(activeOrderData.customerAvailability.remindedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'No response yet'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSendRedeliveryReminder}
+                      disabled={sendingReminder}
+                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg shadow-xs transition-colors cursor-pointer"
+                    >
+                      {sendingReminder ? 'Sending...' : 'Send Reminder'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {activeOrderData.redeliveryStatus === 'CONFIRMED' && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs text-emerald-900">
+                  <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                  <div>
+                    <span className="font-extrabold">Customer Available:</span> Confirmed by customer. Ready for partner assignment and dispatch!
+                  </div>
+                </div>
+              )}
+
+              {activeOrderData.redeliveryStatus === 'RESCHEDULED' && (
+                <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center gap-2 text-xs text-blue-900">
+                  <Calendar size={16} className="text-blue-600 shrink-0" />
+                  <div>
+                    <span className="font-extrabold">Customer Rescheduled:</span> Requested slot:{' '}
+                    <span className="font-black underline">{activeOrderData.rescheduledSlot || activeOrderData.customerAvailability?.rescheduledSlot || 'Scheduled for later'}</span>. Request remains active.
+                  </div>
+                </div>
+              )}
+
+              {activeOrderData.redeliveryStatus === 'DECLINED' && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2 text-xs text-rose-900">
+                  <AlertCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-extrabold">Redelivery Declined by Customer:</span> Reason:{' '}
+                    <span className="font-semibold">{activeOrderData.customerAvailability?.declinedReason || activeOrderData.cancelReason || 'Declined'}</span>.
+                    <p className="mt-0.5 text-[11px] text-rose-700">Follow up with customer for refund or store resolution.</p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -584,15 +728,70 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
           {/* Action Buttons: Accept / Dispatch / Deliver / Cancel */}
           {activeOrderData.status !== 'DELIVERED' && activeOrderData.status !== 'CANCELLED' && (
             <div className="flex flex-wrap items-center gap-2.5">
-              {(activeOrderData.status === 'ORDER_PLACED' || activeOrderData.status === 'PLACED' || !activeOrderData.status) ? (
-                <button
-                  onClick={handleAcceptOrder}
-                  disabled={loading}
-                  className="flex-1 py-2.5 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <Check size={16} strokeWidth={2.4} />
-                  <span>Accept order</span>
-                </button>
+              {activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'AWAITING_CUSTOMER_CONFIRMATION' ? (
+                <div className="flex-1 flex flex-col gap-2">
+                  <div className="p-2.5 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shadow-2xs">
+                    <div className="font-semibold">
+                      ⏳ Awaiting customer response. Do not dispatch automatically.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleSendRedeliveryReminder}
+                      disabled={sendingReminder}
+                      className="py-1 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    >
+                      <Send size={13} />
+                      <span>{sendingReminder ? 'Sending...' : 'Send Reminder'}</span>
+                    </button>
+                  </div>
+                  <div className="py-2.5 bg-gray-100 text-gray-400 font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-not-allowed">
+                    <Clock size={16} />
+                    <span>Dispatch Disabled (Awaiting Customer Availability)</span>
+                  </div>
+                </div>
+              ) : activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'DECLINED' ? (
+                <div className="flex-1 py-2.5 px-3 bg-rose-50 border border-rose-200 text-rose-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
+                  <AlertCircle size={16} className="text-rose-600" />
+                  <span>Redelivery Declined by Customer</span>
+                </div>
+              ) : (activeOrderData.status === 'ORDER_PLACED' || activeOrderData.status === 'PLACED' || !activeOrderData.status) ? (
+                activeOrderData.paymentMethod !== 'COD' && activeOrderData.paymentMethod !== 'FREE_REPLACEMENT' && activeOrderData.paymentStatus !== 'PAID' ? (
+                  <div className="flex-1 flex flex-col gap-2">
+                    <div className="p-2.5 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shadow-2xs">
+                      <div className="font-semibold">
+                        ⚠️ Payment must be verified before approving this order.
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleVerifyPayment}
+                        disabled={loading}
+                        className="py-1.5 px-3 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-lg shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                      >
+                        <Check size={14} strokeWidth={2.4} />
+                        <span>Verify & Approve Payment</span>
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAcceptOrder}
+                      disabled={loading}
+                      className="py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-500 font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                      title="Please verify payment first before approving this order"
+                    >
+                      <Check size={16} strokeWidth={2.4} />
+                      <span>Accept order (Verify payment first)</span>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleAcceptOrder}
+                    disabled={loading}
+                    className="flex-1 py-2.5 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Check size={16} strokeWidth={2.4} />
+                    <span>Accept order</span>
+                  </button>
+                )
               ) : activeOrderData.status === 'ORDER_ACCEPTED' || activeOrderData.status === 'PACKING' ? (
                 <>
                   <div className="py-2.5 px-3 bg-emerald-50 border border-emerald-200/80 text-emerald-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
@@ -601,6 +800,18 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                   </div>
                   <button
                     onClick={() => {
+                      if (activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'AWAITING_CUSTOMER_CONFIRMATION') {
+                        toast.error('Customer has not confirmed availability yet. Please wait for confirmation or send a reminder before dispatching.');
+                        return;
+                      }
+                      if (activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'DECLINED') {
+                        toast.error('Customer declined this redelivery. Order cannot be dispatched.');
+                        return;
+                      }
+                      if (activeOrderData.paymentMethod !== 'COD' && activeOrderData.paymentMethod !== 'FREE_REPLACEMENT' && activeOrderData.paymentStatus !== 'PAID') {
+                        toast.error('Payment must be verified and approved first before dispatching!');
+                        return;
+                      }
                       const hasPartner = Boolean(
                         activeOrderData.assignedPartnerId ||
                         activeOrderData.deliveryBoyId ||
@@ -657,9 +868,44 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
               <button
                 onClick={handleCancelOrder}
                 disabled={loading}
-                className="px-4 py-2.5 border border-rose-300 text-rose-600 hover:bg-rose-50 font-bold text-xs rounded-xl transition-colors"
+                className="px-4 py-2.5 border border-rose-300 text-rose-600 hover:bg-rose-50 font-bold text-xs rounded-xl transition-colors cursor-pointer"
               >
                 Cancel order
+              </button>
+
+              {!activeOrderData.isRedelivery && (
+                <button
+                  type="button"
+                  onClick={() => setShowRedeliveryModal(true)}
+                  disabled={loading}
+                  className="px-3.5 py-2.5 border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                  title="Initiate Free Replacement Redelivery"
+                >
+                  <RotateCcw size={14} />
+                  <span>Free Redelivery</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Initiate Redelivery Option for Completed or Cancelled Orders */}
+          {!activeOrderData.isRedelivery && (activeOrderData.status === 'DELIVERED' || activeOrderData.status === 'CANCELLED') && (
+            <div className="p-3.5 bg-gradient-to-r from-purple-50 via-indigo-50/50 to-purple-50/30 border border-purple-200/80 rounded-xl flex items-center justify-between gap-3 shadow-2xs">
+              <div className="space-y-0.5">
+                <p className="text-xs font-black text-purple-950 flex items-center gap-1.5">
+                  <RotateCcw size={14} className="text-purple-700 shrink-0" />
+                  <span>Initiate Free Replacement Redelivery</span>
+                </p>
+                <p className="text-[11px] text-purple-800">
+                  Creates a free replacement (₹0) linked to #{orderNo}. Customer won't be charged.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRedeliveryModal(true)}
+                className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs rounded-lg shadow-xs transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer shrink-0"
+              >
+                <span>Initiate</span>
               </button>
             </div>
           )}
@@ -760,9 +1006,22 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                         </div>
                       </div>
 
-                      <span className={`text-xs font-extrabold text-gray-900 shrink-0 ${!isChecked ? 'line-through text-gray-400' : ''}`}>
-                        ₹{price * qty}
-                      </span>
+                      <div className="text-right shrink-0">
+                        {activeOrderData.isRedelivery ? (
+                          <div>
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                              Free Replacement
+                            </span>
+                            <p className="text-[11px] text-gray-400 font-medium line-through mt-0.5">
+                              ₹{(price || Number(it.originalPrice || 0)) * qty}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className={`text-xs font-extrabold text-gray-900 ${!isChecked ? 'line-through text-gray-400' : ''}`}>
+                            ₹{price * qty}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   );
                 })
@@ -770,20 +1029,46 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
             </div>
 
             {/* Price Breakdown */}
-            <div className="pt-2 border-t border-gray-100 space-y-1 text-xs">
-              <div className="flex justify-between text-gray-600 font-semibold">
-                <span>Item total</span>
-                <span className="text-gray-900 font-bold">₹{itemTotal}</span>
+            {activeOrderData.isRedelivery ? (
+              <div className="pt-2 border-t border-gray-100 space-y-1.5 text-xs">
+                <div className="flex justify-between text-gray-600 font-semibold">
+                  <span>Replacement items value</span>
+                  <span className="text-gray-900 font-bold">₹{itemTotal || activeOrderData.itemsTotalValue || 0}</span>
+                </div>
+                <div className="flex justify-between text-gray-600 font-semibold">
+                  <span>Store coverage</span>
+                  <span className="font-extrabold text-[#0A7C47]">-₹{itemTotal || activeOrderData.itemsTotalValue || 0} (100% Free)</span>
+                </div>
+                <div className="flex justify-between text-gray-600 font-semibold">
+                  <span>Delivery fee</span>
+                  <span className="font-extrabold text-[#0A7C47]">FREE</span>
+                </div>
+                <div className="flex justify-between text-sm font-extrabold text-gray-900 pt-1.5 border-t border-gray-100">
+                  <div className="flex flex-col">
+                    <span>Customer To Pay</span>
+                    <span className="text-[10px] text-emerald-700 font-bold">
+                      Free Replacement · Linked to Order #{activeOrderData.originalOrderNo || 'Original'}
+                    </span>
+                  </div>
+                  <span className="text-emerald-700 text-base font-black">₹0</span>
+                </div>
               </div>
-              <div className="flex justify-between text-gray-600 font-semibold">
-                <span>Delivery fee</span>
-                <span className="font-extrabold text-[#0A7C47]">{deliveryFee > 0 ? `₹${deliveryFee}` : 'FREE'}</span>
+            ) : (
+              <div className="pt-2 border-t border-gray-100 space-y-1 text-xs">
+                <div className="flex justify-between text-gray-600 font-semibold">
+                  <span>Item total</span>
+                  <span className="text-gray-900 font-bold">₹{itemTotal}</span>
+                </div>
+                <div className="flex justify-between text-gray-600 font-semibold">
+                  <span>Delivery fee</span>
+                  <span className="font-extrabold text-[#0A7C47]">{deliveryFee > 0 ? `₹${deliveryFee}` : 'FREE'}</span>
+                </div>
+                <div className="flex justify-between text-sm font-extrabold text-gray-900 pt-1 border-t border-gray-100">
+                  <span>Order Total (Paid Online)</span>
+                  <span>₹{toCollect}</span>
+                </div>
               </div>
-              <div className="flex justify-between text-sm font-extrabold text-gray-900 pt-1 border-t border-gray-100">
-                <span>Order Total (Paid Online)</span>
-                <span>₹{toCollect}</span>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* Only show review actions while payment still needs a decision. */}
@@ -837,15 +1122,28 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
               {(() => {
                 const s = (activeOrderData.status || order.status || '').toUpperCase();
                 const isOrderNew = s === 'ORDER_PLACED' || s === 'NEW' || s === 'PLACED' || !s;
+                const isPaymentPending = activeOrderData.paymentMethod !== 'COD' && activeOrderData.paymentMethod !== 'FREE_REPLACEMENT' && activeOrderData.paymentStatus !== 'PAID';
+                const isAwaitingRedeliveryConfirm = activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'AWAITING_CUSTOMER_CONFIRMATION';
+                const isRedeliveryDeclined = activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'DECLINED';
 
                 return (
                   <select
-                    disabled={assigningPartner || isOrderNew || activeOrderData.status === 'DELIVERED'}
-                    title={isOrderNew ? 'Accept / approve order first before assigning partner' : ''}
+                    disabled={assigningPartner || isOrderNew || isPaymentPending || isAwaitingRedeliveryConfirm || isRedeliveryDeclined || activeOrderData.status === 'DELIVERED'}
+                    title={
+                      isRedeliveryDeclined
+                        ? 'Customer declined redelivery'
+                        : isAwaitingRedeliveryConfirm
+                        ? 'Customer has not confirmed availability yet'
+                        : isPaymentPending
+                        ? 'Verify payment first before assigning partner'
+                        : isOrderNew
+                        ? 'Accept / approve order first before assigning partner'
+                        : ''
+                    }
                     value={activeOrderData.deliveryAcceptanceStatus === 'REJECTED' ? '' : (activeOrderData.assignedPartnerId || '')}
                     onChange={(e) => handleAssignPartnerModal(e.target.value)}
                     className={`w-full px-3 py-2 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-600 focus:bg-white shadow-2xs border ${
-                      isOrderNew
+                      isOrderNew || isPaymentPending || isAwaitingRedeliveryConfirm || isRedeliveryDeclined
                         ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-75'
                         : activeOrderData.deliveryAcceptanceStatus === 'REJECTED'
                         ? 'border-rose-300 bg-rose-50 text-rose-900 font-bold cursor-pointer'
@@ -853,7 +1151,13 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                     }`}
                   >
                     <option value="">
-                      {isOrderNew
+                      {isRedeliveryDeclined
+                        ? 'Redelivery Declined by Customer'
+                        : isAwaitingRedeliveryConfirm
+                        ? 'Awaiting customer confirmation to assign partner...'
+                        : isPaymentPending
+                        ? 'Verify payment first to assign partner...'
+                        : isOrderNew
                         ? 'Approve order first to assign partner...'
                         : activeOrderData.deliveryAcceptanceStatus === 'REJECTED'
                         ? 'Rejected — Re-assign new partner...'
@@ -1005,6 +1309,109 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                 className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
                 {cancelling ? 'Cancelling...' : 'Confirm & Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Initiate Redelivery Confirmation Modal */}
+      {showRedeliveryModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-gray-100 space-y-4 animate-scale-in">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center font-bold shrink-0">
+                  <RotateCcw size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-gray-900 leading-tight">
+                    Free Replacement Redelivery
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Order #{orderNo} · Customer will NOT be charged
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRedeliveryModal(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-3 bg-purple-50/80 border border-purple-200/80 rounded-xl text-xs text-purple-900 space-y-1">
+              <div className="font-extrabold flex items-center gap-1.5">
+                <span>Free Replacement Redelivery Record</span>
+              </div>
+              <p className="text-[11px] text-purple-800 leading-relaxed">
+                A separate ₹0 replacement order will be created and linked to Order #{orderNo}.
+                The customer will immediately receive an in-app popup asking if they are available to receive the delivery.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-2">
+                Select reason for redelivery:
+              </label>
+              <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                {[
+                  'Items damaged in transit',
+                  'Missing item(s) from parcel',
+                  'Customer received incorrect item(s)',
+                  'Quality issue / spoiled item',
+                  'Other reason',
+                ].map((reason) => (
+                  <button
+                    key={reason}
+                    type="button"
+                    onClick={() => setRedeliveryPreset(reason)}
+                    className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs transition-all cursor-pointer border ${
+                      redeliveryPreset === reason
+                        ? 'bg-purple-50 border-purple-300 text-purple-950 font-bold shadow-2xs'
+                        : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 font-medium'
+                    }`}
+                  >
+                    {reason}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                Additional notes for customer & dispatch team:
+              </label>
+              <textarea
+                rows={2}
+                value={redeliveryCustomReason}
+                onChange={(e) => setRedeliveryCustomReason(e.target.value)}
+                placeholder={
+                  redeliveryPreset === 'Other reason'
+                    ? 'Please specify replacement details...'
+                    : 'Add special replacement notes (optional)...'
+                }
+                className="w-full p-2.5 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 font-medium"
+              />
+            </div>
+
+            <div className="flex items-center gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowRedeliveryModal(false)}
+                disabled={initiatingRedelivery}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleInitiateRedelivery}
+                disabled={initiatingRedelivery}
+                className="flex-1 py-2.5 bg-purple-700 hover:bg-purple-800 active:bg-purple-900 text-white rounded-xl text-xs font-bold shadow-2xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {initiatingRedelivery ? 'Creating...' : 'Confirm & Initiate Redelivery'}
               </button>
             </div>
           </div>

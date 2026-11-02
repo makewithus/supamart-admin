@@ -84,13 +84,10 @@ export default function DeliveryPartners() {
       const activeOrders = pOrders.filter((o) => {
         const s = (o.status || '').toUpperCase();
         const acceptance = (o.deliveryAcceptanceStatus || '').toUpperCase();
-        if (s === 'DELIVERED' || s === 'CANCELLED' || acceptance === 'REJECTED') return false;
+        if (s === 'DELIVERED' || s === 'CANCELLED' || s === 'DELIVERY_DISPUTED' || acceptance === 'REJECTED') return false;
         return (
-          acceptance === 'ACCEPTED' ||
-          s === 'OUT_FOR_DELIVERY' ||
-          s === 'ORDER_ACCEPTED' ||
-          s === 'PENDING_CONFIRMATION' ||
-          s === 'PACKING'
+          acceptance === 'ACCEPTED' &&
+          (s === 'OUT_FOR_DELIVERY' || s === 'ORDER_ACCEPTED' || s === 'PENDING_CONFIRMATION' || s === 'PACKING')
         );
       });
 
@@ -109,11 +106,16 @@ export default function DeliveryPartners() {
         statusType = 'off_duty';
         subText = 'Off duty · Cannot receive orders';
         btnAction = 'Message';
-      } else if (activeOrders.length > 0 || p?.status === 'on_delivery') {
+      } else if (activeOrders.length > 0) {
         status = 'On delivery';
         statusType = 'on_delivery';
-        const count = activeOrders.length || 1;
+        const count = activeOrders.length;
         subText = `${count} active ${count === 1 ? 'delivery' : 'deliveries'}`;
+        btnAction = 'Track';
+      } else {
+        status = 'On duty';
+        statusType = 'at_store';
+        subText = 'Available · Ready for orders';
         btnAction = 'Track';
       }
 
@@ -247,6 +249,11 @@ export default function DeliveryPartners() {
 
   const handleAssign = async (orderId, partnerId) => {
     if (!partnerId) return;
+    const orderItem = deliveriesList.find((d) => d.id === orderId);
+    if (orderItem && orderItem.paymentMethod !== 'COD' && !orderItem.isPaid) {
+      toast.error('Payment must be verified and approved first before assigning a delivery partner.');
+      return;
+    }
     const targetPartner = rawPartners.find((p) => p.id === partnerId);
     if (targetPartner && (targetPartner.isOnDuty === false || targetPartner.isActive === false)) {
       toast.error(`${targetPartner.name} is currently OFF DUTY and cannot be assigned`);
@@ -543,16 +550,22 @@ export default function DeliveryPartners() {
                         {/* Assign / Re-assign Dropdown (Only On Duty Partners) */}
                         {!d.isDelivered && (
                           <select
+                            disabled={d.paymentMethod !== 'COD' && !d.isPaid}
+                            title={d.paymentMethod !== 'COD' && !d.isPaid ? 'Payment must be verified first before assigning partner' : ''}
                             value={d.acceptanceStatus === 'REJECTED' ? '' : (d.assignedPartnerId || '')}
                             onChange={(e) => handleAssign(d.id, e.target.value)}
-                            className={`w-full px-2 py-1 rounded-lg text-[11px] font-semibold focus:outline-none focus:border-emerald-600 cursor-pointer shadow-2xs border ${
-                              d.acceptanceStatus === 'REJECTED'
-                                ? 'bg-rose-50 border-rose-300 text-rose-900 font-bold'
-                                : 'bg-white border-gray-200 text-gray-700'
+                            className={`w-full px-2 py-1 rounded-lg text-[11px] font-semibold focus:outline-none focus:border-emerald-600 shadow-2xs border ${
+                              d.paymentMethod !== 'COD' && !d.isPaid
+                                ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-75'
+                                : d.acceptanceStatus === 'REJECTED'
+                                ? 'bg-rose-50 border-rose-300 text-rose-900 font-bold cursor-pointer'
+                                : 'bg-white border-gray-200 text-gray-700 cursor-pointer'
                             }`}
                           >
                             <option value="">
-                              {d.acceptanceStatus === 'REJECTED'
+                              {d.paymentMethod !== 'COD' && !d.isPaid
+                                ? 'Verify payment first...'
+                                : d.acceptanceStatus === 'REJECTED'
                                 ? 'Re-assign partner...'
                                 : d.assignedPartnerId
                                 ? 'Re-assign partner...'
@@ -760,12 +773,20 @@ export default function DeliveryPartners() {
 
                   {!d.isDelivered && (
                     <select
+                      disabled={d.paymentMethod !== 'COD' && !d.isPaid}
+                      title={d.paymentMethod !== 'COD' && !d.isPaid ? 'Payment must be verified first before assigning partner' : ''}
                       value={d.acceptanceStatus === 'REJECTED' ? '' : (d.assignedPartnerId || '')}
                       onChange={(e) => handleAssign(d.id, e.target.value)}
-                      className="w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-gray-50 border border-gray-200 text-gray-800 focus:bg-white focus:outline-none focus:border-emerald-600"
+                      className={`w-full px-2.5 py-1.5 rounded-lg text-xs font-semibold border ${
+                        d.paymentMethod !== 'COD' && !d.isPaid
+                          ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-75'
+                          : 'bg-gray-50 border-gray-200 text-gray-800 focus:bg-white focus:outline-none focus:border-emerald-600 cursor-pointer'
+                      }`}
                     >
                       <option value="">
-                        {d.acceptanceStatus === 'REJECTED'
+                        {d.paymentMethod !== 'COD' && !d.isPaid
+                          ? 'Verify payment first...'
+                          : d.acceptanceStatus === 'REJECTED'
                           ? 'Re-assign partner...'
                           : d.assignedPartnerId
                           ? 'Re-assign partner...'

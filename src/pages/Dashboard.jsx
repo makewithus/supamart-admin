@@ -348,22 +348,43 @@ export default function Dashboard() {
     ];
   }, [chartMax]);
 
-  // 5. Delivery Partners & Fleet Status (Real-time computed)
+  // 5. Delivery Partners & Fleet Status (Real-time computed from live orders & partners)
   const deliveryFleetData = useMemo(() => {
     const onDuty = partners.filter((p) => p.isOnDuty !== false && p.isActive !== false);
     const offDuty = partners.filter((p) => p.isOnDuty === false || p.isActive === false);
-    const activeDeliveries = orders.filter((o) => o.status === 'OUT_FOR_DELIVERY' || o.status === 'ORDER_ACCEPTED');
+
+    // Live active orders: assigned to a partner, accepted by that partner, and actively in delivery
+    const liveActiveOrders = orders.filter((o) => {
+      const s = (o.status || '').toUpperCase();
+      const acceptance = (o.deliveryAcceptanceStatus || '').toUpperCase();
+      return (
+        !['DELIVERED', 'CANCELLED', 'DELIVERY_DISPUTED'].includes(s) &&
+        acceptance === 'ACCEPTED' &&
+        (s === 'OUT_FOR_DELIVERY' || s === 'ORDER_ACCEPTED') &&
+        Boolean(o.assignedPartnerId)
+      );
+    });
+
+    const partnersWithStats = partners.map((p) => {
+      const pActiveCount = liveActiveOrders.filter((o) => String(o.assignedPartnerId) === String(p.id)).length;
+      return {
+        id: p.id,
+        name: p.name || 'Partner',
+        isOnDuty: p.isOnDuty !== false && p.isActive !== false,
+        activeOrders: pActiveCount,
+      };
+    });
+
+    const busyPartnersCount = partnersWithStats.filter((p) => p.isOnDuty && p.activeOrders > 0).length;
+    const readyCount = Math.max(0, onDuty.length - busyPartnersCount);
+
     return {
       onDutyCount: onDuty.length,
       offDutyCount: offDuty.length,
       totalCount: partners.length,
-      activeDeliveriesCount: activeDeliveries.length,
-      partnersList: partners.slice(0, 4).map((p) => ({
-        id: p.id,
-        name: p.name || 'Partner',
-        isOnDuty: p.isOnDuty !== false && p.isActive !== false,
-        activeOrders: orders.filter((o) => o.assignedPartnerId === p.id && (o.status === 'OUT_FOR_DELIVERY' || o.status === 'ORDER_ACCEPTED')).length,
-      })),
+      activeDeliveriesCount: liveActiveOrders.length,
+      readyCount,
+      partnersList: partnersWithStats,
     };
   }, [partners, orders]);
 
@@ -798,7 +819,7 @@ export default function Dashboard() {
           {/* Bottom callout note */}
           <div className="mt-5 p-3 rounded-xl bg-gray-50 border border-gray-200/60 text-center">
             <p className="text-[11px] font-semibold text-gray-500 leading-relaxed">
-              On-demand instant assignment · {deliveryFleetData.onDutyCount} ready to receive orders
+              On-demand instant assignment · {deliveryFleetData.readyCount} ready to receive orders
             </p>
           </div>
         </div>
