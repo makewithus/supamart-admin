@@ -28,10 +28,26 @@ export function formatDeliverySlot(slot, fallback = '4–6 PM') {
   return String(slot);
 }
 
+function deduplicatePhrases(text) {
+  if (!text || typeof text !== 'string') return '';
+  const parts = text.split(/[;\n]+/).map((s) => s.trim()).filter(Boolean);
+  const seen = new Set();
+  const deduped = [];
+  for (const p of parts) {
+    const key = p.toLowerCase().replace(/\s+/g, ' ');
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(p);
+    }
+  }
+  return deduped.join('; ');
+}
+
 /**
  * Safely extracts a human-readable display string for order delivery instructions.
  * Prevents "Objects are not valid as a React child (found: object with keys {landmark, combinedNote, ...})"
- * when order.deliveryInstructions or order.instructions is stored as an object.
+ * when order.deliveryInstructions or order.instructions is stored as an object,
+ * and deduplicates repeated phrases.
  *
  * @param {string|object|null|undefined} instructions - The raw delivery instructions from the order
  * @param {string} [fallback=''] - Fallback label if instructions are missing
@@ -49,26 +65,26 @@ export function formatDeliveryInstructions(instructions, fallback = '') {
           return formatDeliveryInstructions(parsed, fallback);
         }
       } catch {
-        return trimmed;
+        return deduplicatePhrases(trimmed) || fallback;
       }
     }
-    return trimmed;
+    return deduplicatePhrases(trimmed) || fallback;
   }
   if (typeof instructions === 'object') {
     if (typeof instructions.combinedNote === 'string' && instructions.combinedNote.trim()) {
-      return instructions.combinedNote.trim();
+      return deduplicatePhrases(instructions.combinedNote.trim()) || fallback;
     }
     if (typeof instructions.summary === 'string' && instructions.summary.trim()) {
-      return instructions.summary.trim();
+      return deduplicatePhrases(instructions.summary.trim()) || fallback;
     }
     if (typeof instructions.additionalNotes === 'string' && instructions.additionalNotes.trim()) {
-      return instructions.additionalNotes.trim();
+      return deduplicatePhrases(instructions.additionalNotes.trim()) || fallback;
     }
     if (Array.isArray(instructions.selectedLabels) && instructions.selectedLabels.length > 0) {
       const labels = instructions.selectedLabels
         .filter((l) => typeof l === 'string' && l.trim())
         .join('; ');
-      if (labels) return labels;
+      if (labels) return deduplicatePhrases(labels) || fallback;
     }
     if (typeof instructions.landmark === 'string' && instructions.landmark.trim()) {
       return `Landmark: ${instructions.landmark.trim()}`;
@@ -79,10 +95,10 @@ export function formatDeliveryInstructions(instructions, fallback = '') {
     const stringValues = Object.entries(instructions)
       .filter(([k, v]) => typeof v === 'string' && v.trim() && !['id', '_id'].includes(k))
       .map(([k, v]) => `${k}: ${v}`);
-    if (stringValues.length > 0) return stringValues.join(', ');
+    if (stringValues.length > 0) return deduplicatePhrases(stringValues.join(', ')) || fallback;
     return fallback;
   }
-  return String(instructions);
+  return deduplicatePhrases(String(instructions)) || fallback;
 }
 
 /**
@@ -106,4 +122,48 @@ export function formatAddress(rawAddr, fallback = 'Address on file') {
     return fallback;
   }
   return String(rawAddr);
+}
+
+/**
+ * Returns human-readable label and Tailwind styling classes for an order status.
+ *
+ * @param {string} status - Raw order status
+ * @param {boolean} [isRedelivery=false] - Whether this order is a free replacement
+ * @returns {{ label: string, bgClass: string }}
+ */
+export function getStatusBadgeConfig(status, isRedelivery = false) {
+  if (isRedelivery) {
+    return {
+      label: 'Free Replacement',
+      bgClass: 'bg-purple-100 text-purple-800 border-purple-200',
+    };
+  }
+  const s = String(status || '').toUpperCase().trim();
+  switch (s) {
+    case 'ORDER_PLACED':
+    case 'PLACED':
+    case 'NEW':
+      return { label: 'New Order', bgClass: 'bg-amber-50 text-amber-700 border-amber-200' };
+    case 'ORDER_ACCEPTED':
+    case 'ACCEPTED':
+      return { label: 'Order Accepted', bgClass: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    case 'PACKING':
+    case 'READY_FOR_DELIVERY':
+      return { label: 'Packing', bgClass: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+    case 'OUT_FOR_DELIVERY':
+      return { label: 'Out for Delivery', bgClass: 'bg-cyan-50 text-cyan-800 border-cyan-200' };
+    case 'PENDING_CONFIRMATION':
+      return { label: 'Awaiting Confirmation', bgClass: 'bg-blue-50 text-blue-700 border-blue-200' };
+    case 'DELIVERED':
+      return { label: 'Delivered', bgClass: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
+    case 'CANCELLED':
+      return { label: 'Cancelled', bgClass: 'bg-rose-50 text-rose-700 border-rose-200' };
+    case 'DISPUTED':
+      return { label: 'Disputed', bgClass: 'bg-orange-50 text-orange-700 border-orange-200' };
+    default:
+      return {
+        label: s ? s.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : 'New Order',
+        bgClass: 'bg-gray-100 text-gray-700 border-gray-200',
+      };
+  }
 }

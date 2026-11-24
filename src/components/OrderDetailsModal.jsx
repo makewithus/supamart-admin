@@ -10,7 +10,7 @@ import { apiPatch, apiPost } from '../services/api';
 import productImages from '../utils/productImages';
 import { db } from '../config/firebase';
 import { doc, onSnapshot, collection } from 'firebase/firestore';
-import { formatDeliveryInstructions } from '../utils/orderUtils';
+import { formatDeliveryInstructions, getStatusBadgeConfig } from '../utils/orderUtils';
 
 const STEPS = [
   { id: 'ORDER_PLACED', label: 'Placed' },
@@ -28,7 +28,14 @@ const DELAY_REASON_PRESETS = [
   'Delivery Vehicle Breakdown',
 ];
 
-export default function OrderDetailsModal({ order, partners: initialPartners = [], onClose, onSuccess }) {
+export default function OrderDetailsModal({
+  order,
+  partners: initialPartners = [],
+  onClose,
+  onSuccess,
+  readOnly = false,
+  viewOnlyReason = ''
+}) {
   if (!order) return null;
 
   const [liveOrder, setLiveOrder] = useState(order);
@@ -376,7 +383,7 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
       />
 
       {/* Slide-over Drawer Panel */}
-      <div className="relative w-full max-w-[500px] sm:max-w-[520px] bg-white h-full shadow-2xl flex flex-col z-[100] overflow-hidden animate-slide-in-right">
+      <div className="relative w-full max-w-[500px] sm:max-w-[540px] bg-white h-full shadow-2xl flex flex-col z-[100] overflow-hidden animate-slide-in-right">
         {/* Drawer Header */}
         <div className="p-4 sm:p-5 border-b border-gray-100 flex items-start justify-between bg-white shrink-0">
           <div>
@@ -384,15 +391,14 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
               <span className="text-lg sm:text-xl font-black text-gray-900 tracking-tight">
                 {orderNo}
               </span>
-              {activeOrderData.isRedelivery ? (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
-                  Free Replacement
-                </span>
-              ) : (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold bg-rose-50 text-rose-600">
-                  {order.status === 'ORDER_PLACED' || !order.status ? 'New' : order.status}
-                </span>
-              )}
+              {(() => {
+                const badge = getStatusBadgeConfig(activeOrderData.status, activeOrderData.isRedelivery);
+                return (
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold border ${badge.bgClass}`}>
+                    {badge.label}
+                  </span>
+                );
+              })()}
             </div>
             <p className="text-[11px] sm:text-xs font-semibold text-gray-400 mt-0.5 sm:mt-1">
               {placedTime} · Instant Delivery
@@ -403,14 +409,14 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
             <button
               onClick={handlePrint}
               title="Print Order Receipt"
-              className="p-1.5 sm:p-2 border border-gray-200 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+              className="p-1.5 sm:p-2 border border-gray-200 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors cursor-pointer"
             >
               <Printer size={16} strokeWidth={2} />
             </button>
             <button
               onClick={onClose}
               title="Close"
-              className="p-1.5 sm:p-2 border border-gray-200 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+              className="p-1.5 sm:p-2 border border-gray-200 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors cursor-pointer"
             >
               <X size={16} strokeWidth={2} />
             </button>
@@ -418,7 +424,7 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
         </div>
 
         {/* Scrollable Content Body */}
-        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 pb-24 sm:pb-32 space-y-4 sm:space-y-6">
+        <div className="flex-1 overflow-y-auto min-h-0 p-3.5 sm:p-5 pb-8 sm:pb-12 space-y-4 sm:space-y-6">
           {/* Cancelled Alert Banner (if cancelled) */}
           {activeOrderData.status === 'CANCELLED' && (
             <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl space-y-1 shadow-2xs">
@@ -531,8 +537,8 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
           )}
 
           {/* Stepper Progress */}
-          <div className="pt-1">
-            <div className="grid grid-cols-5 text-center text-xs pb-2 border-b border-gray-100">
+          <div className="pt-1 pb-2 border-b border-gray-100">
+            <div className="grid grid-cols-5 text-center text-xs">
               {STEPS.map((step, idx) => {
                 const isActive = idx === currentStepIdx;
                 const isPassed = idx < currentStepIdx;
@@ -550,9 +556,17 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                     >
                       {step.label}
                     </span>
-                    {isActive && (
-                      <div className="w-full h-0.5 bg-[#0A7C47] rounded-full mt-2" />
-                    )}
+                    <div className="w-full mt-2 flex items-center justify-center px-0.5">
+                      <div
+                        className={`h-1 w-full rounded-full transition-all ${
+                          isActive
+                            ? 'bg-[#0A7C47]'
+                            : isPassed
+                            ? 'bg-emerald-200'
+                            : 'bg-gray-100'
+                        }`}
+                      />
+                    </div>
                   </div>
                 );
               })}
@@ -726,13 +740,15 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
           )}
 
           {/* Action Buttons: Accept / Dispatch / Deliver / Cancel */}
-          {activeOrderData.status !== 'DELIVERED' && activeOrderData.status !== 'CANCELLED' && (
-            <div className="flex flex-wrap items-center gap-2.5">
+          {activeOrderData.status !== 'DELIVERED' && activeOrderData.status !== 'CANCELLED' && !readOnly && (
+            <div className="space-y-2">
+              {/* Primary Lifecycle Action Button */}
               {activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'AWAITING_CUSTOMER_CONFIRMATION' ? (
-                <div className="flex-1 flex flex-col gap-2">
+                <div className="space-y-2">
                   <div className="p-2.5 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shadow-2xs">
-                    <div className="font-semibold">
-                      ⏳ Awaiting customer response. Do not dispatch automatically.
+                    <div className="font-semibold flex items-center gap-1.5">
+                      <Clock size={14} className="text-amber-600 shrink-0" />
+                      <span>Awaiting customer response. Do not dispatch.</span>
                     </div>
                     <button
                       type="button"
@@ -744,22 +760,23 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                       <span>{sendingReminder ? 'Sending...' : 'Send Reminder'}</span>
                     </button>
                   </div>
-                  <div className="py-2.5 bg-gray-100 text-gray-400 font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-not-allowed">
-                    <Clock size={16} />
-                    <span>Dispatch Disabled (Awaiting Customer Availability)</span>
+                  <div className="w-full py-2.5 bg-gray-100 text-gray-400 font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 cursor-not-allowed">
+                    <Clock size={15} />
+                    <span>Dispatch Disabled (Awaiting Availability)</span>
                   </div>
                 </div>
               ) : activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'DECLINED' ? (
-                <div className="flex-1 py-2.5 px-3 bg-rose-50 border border-rose-200 text-rose-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
-                  <AlertCircle size={16} className="text-rose-600" />
+                <div className="w-full py-2.5 px-3 bg-rose-50 border border-rose-200 text-rose-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
+                  <AlertCircle size={15} className="text-rose-600" />
                   <span>Redelivery Declined by Customer</span>
                 </div>
               ) : (activeOrderData.status === 'ORDER_PLACED' || activeOrderData.status === 'PLACED' || !activeOrderData.status) ? (
                 activeOrderData.paymentMethod !== 'COD' && activeOrderData.paymentMethod !== 'FREE_REPLACEMENT' && activeOrderData.paymentStatus !== 'PAID' ? (
-                  <div className="flex-1 flex flex-col gap-2">
+                  <div className="space-y-2">
                     <div className="p-2.5 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-900 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shadow-2xs">
-                      <div className="font-semibold">
-                        ⚠️ Payment must be verified before approving this order.
+                      <div className="font-semibold flex items-center gap-1.5">
+                        <AlertCircle size={14} className="text-amber-600 shrink-0" />
+                        <span>Payment must be verified before approving.</span>
                       </div>
                       <button
                         type="button"
@@ -768,14 +785,14 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                         className="py-1.5 px-3 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-lg shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                       >
                         <Check size={14} strokeWidth={2.4} />
-                        <span>Verify & Approve Payment</span>
+                        <span>Verify Payment</span>
                       </button>
                     </div>
                     <button
                       type="button"
                       onClick={handleAcceptOrder}
                       disabled={loading}
-                      className="py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-500 font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                      className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-500 font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                       title="Please verify payment first before approving this order"
                     >
                       <Check size={16} strokeWidth={2.4} />
@@ -786,105 +803,99 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                   <button
                     onClick={handleAcceptOrder}
                     disabled={loading}
-                    className="flex-1 py-2.5 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full py-2.5 bg-[#0A7C47] hover:bg-emerald-800 active:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                   >
                     <Check size={16} strokeWidth={2.4} />
                     <span>Accept order</span>
                   </button>
                 )
               ) : activeOrderData.status === 'ORDER_ACCEPTED' || activeOrderData.status === 'PACKING' ? (
-                <>
-                  <div className="py-2.5 px-3 bg-emerald-50 border border-emerald-200/80 text-emerald-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
-                    <CheckCircle2 size={16} className="text-emerald-600" strokeWidth={2.4} />
-                    <span>Accepted</span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      if (activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'AWAITING_CUSTOMER_CONFIRMATION') {
-                        toast.error('Customer has not confirmed availability yet. Please wait for confirmation or send a reminder before dispatching.');
-                        return;
-                      }
-                      if (activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'DECLINED') {
-                        toast.error('Customer declined this redelivery. Order cannot be dispatched.');
-                        return;
-                      }
-                      if (activeOrderData.paymentMethod !== 'COD' && activeOrderData.paymentMethod !== 'FREE_REPLACEMENT' && activeOrderData.paymentStatus !== 'PAID') {
-                        toast.error('Payment must be verified and approved first before dispatching!');
-                        return;
-                      }
-                      const hasPartner = Boolean(
-                        activeOrderData.assignedPartnerId ||
-                        activeOrderData.deliveryBoyId ||
-                        activeOrderData.deliveryPartner?.id ||
-                        activeOrderData.deliveryBoyName ||
-                        activeOrderData.deliveryPartner?.name
-                      );
-                      if (!hasPartner) {
-                        toast.error('Please assign a delivery partner before marking Out for Delivery!');
-                        return;
-                      }
-                      handleUpdateStatus('OUT_FOR_DELIVERY', `Order ${orderNo} dispatched - Out for Delivery!`);
-                    }}
-                    disabled={loading}
-                    className="flex-1 py-2.5 bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <Truck size={16} strokeWidth={2.4} />
-                    <span>Out for delivery</span>
-                  </button>
-                </>
+                <button
+                  onClick={() => {
+                    if (activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'AWAITING_CUSTOMER_CONFIRMATION') {
+                      toast.error('Customer has not confirmed availability yet. Please wait for confirmation or send a reminder before dispatching.');
+                      return;
+                    }
+                    if (activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'DECLINED') {
+                      toast.error('Customer declined this redelivery. Order cannot be dispatched.');
+                      return;
+                    }
+                    if (activeOrderData.paymentMethod !== 'COD' && activeOrderData.paymentMethod !== 'FREE_REPLACEMENT' && activeOrderData.paymentStatus !== 'PAID') {
+                      toast.error('Payment must be verified and approved first before dispatching!');
+                      return;
+                    }
+                    const hasPartner = Boolean(
+                      activeOrderData.assignedPartnerId ||
+                      activeOrderData.deliveryBoyId ||
+                      activeOrderData.deliveryPartner?.id ||
+                      activeOrderData.deliveryBoyName ||
+                      activeOrderData.deliveryPartner?.name
+                    );
+                    if (!hasPartner) {
+                      toast.error('Please assign a delivery partner before marking Out for Delivery!');
+                      return;
+                    }
+                    handleUpdateStatus('OUT_FOR_DELIVERY', `Order ${orderNo} dispatched - Out for Delivery!`);
+                  }}
+                  disabled={loading}
+                  className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  <Truck size={16} strokeWidth={2.4} />
+                  <span>Mark Out for Delivery</span>
+                </button>
               ) : activeOrderData.status === 'OUT_FOR_DELIVERY' ? (
-                <>
-                  <div className="py-2.5 px-3 bg-cyan-50 border border-cyan-200/80 text-cyan-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
-                    <Truck size={16} className="text-cyan-600" strokeWidth={2.4} />
-                    <span>On the way</span>
-                  </div>
-                  <button
-                    onClick={() => handleUpdateStatus('PENDING_CONFIRMATION', `Order ${orderNo} marked as Delivered! Awaiting customer confirmation.`)}
-                    disabled={loading}
-                    className="flex-1 py-2.5 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <Check size={16} strokeWidth={2.4} />
-                    <span>Mark Delivered</span>
-                  </button>
-                </>
+                <button
+                  onClick={() => handleUpdateStatus('PENDING_CONFIRMATION', `Order ${orderNo} marked as Delivered! Awaiting customer confirmation.`)}
+                  disabled={loading}
+                  className="w-full py-2.5 bg-[#0A7C47] hover:bg-emerald-800 active:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  <Check size={16} strokeWidth={2.4} />
+                  <span>Mark Delivered</span>
+                </button>
               ) : activeOrderData.status === 'PENDING_CONFIRMATION' ? (
-                <>
-                  <div className="py-2.5 px-3 bg-amber-50 border border-amber-200/80 text-amber-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
-                    <Clock size={16} className="text-amber-600" strokeWidth={2.4} />
+                <div className="space-y-2">
+                  <div className="py-2 px-3 bg-amber-50 border border-amber-200 text-amber-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5">
+                    <Clock size={14} className="text-amber-600" strokeWidth={2.4} />
                     <span>Awaiting customer confirmation</span>
                   </div>
                   <button
                     onClick={() => handleUpdateStatus('DELIVERED', `Order ${orderNo} closed and confirmed by Admin!`)}
                     disabled={loading}
-                    className="flex-1 py-2.5 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                    className="w-full py-2.5 bg-[#0A7C47] hover:bg-emerald-800 active:bg-emerald-900 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                     title="Force complete / close order if customer cannot confirm via app"
                   >
                     <Check size={16} strokeWidth={2.4} />
                     <span>Confirm & Close Order</span>
                   </button>
-                </>
+                </div>
               ) : null}
 
-              <button
-                onClick={handleCancelOrder}
-                disabled={loading}
-                className="px-4 py-2.5 border border-rose-300 text-rose-600 hover:bg-rose-50 font-bold text-xs rounded-xl transition-colors cursor-pointer"
-              >
-                Cancel order
-              </button>
-
-              {!activeOrderData.isRedelivery && (
+              {/* Secondary Action Row: Cancel and Free Redelivery */}
+              <div className="grid grid-cols-2 gap-2 pt-0.5">
                 <button
-                  type="button"
-                  onClick={() => setShowRedeliveryModal(true)}
+                  onClick={handleCancelOrder}
                   disabled={loading}
-                  className="px-3.5 py-2.5 border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-                  title="Initiate Free Replacement Redelivery"
+                  className={`w-full py-2 px-3 border border-rose-300 hover:bg-rose-50 text-rose-600 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                    activeOrderData.isRedelivery ? 'col-span-2' : ''
+                  }`}
                 >
-                  <RotateCcw size={14} />
-                  <span>Free Redelivery</span>
+                  <XCircle size={14} />
+                  <span>Cancel order</span>
                 </button>
-              )}
+
+                {!activeOrderData.isRedelivery && (
+                  <button
+                    type="button"
+                    onClick={() => setShowRedeliveryModal(true)}
+                    disabled={loading}
+                    className="w-full py-2 px-3 border border-purple-200 bg-purple-50/70 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    title="Initiate Free Replacement Redelivery"
+                  >
+                    <RotateCcw size={13} />
+                    <span>Free Redelivery</span>
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -1059,12 +1070,44 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                   <span>Item total</span>
                   <span className="text-gray-900 font-bold">₹{itemTotal}</span>
                 </div>
+                {Boolean(activeOrderData.discount || activeOrderData.couponDiscount) && (
+                  <div className="flex justify-between text-gray-600 font-semibold">
+                    <span>Discount</span>
+                    <span className="font-extrabold text-[#0A7C47]">
+                      -₹{activeOrderData.discount || activeOrderData.couponDiscount}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between text-gray-600 font-semibold">
                   <span>Delivery fee</span>
                   <span className="font-extrabold text-[#0A7C47]">{deliveryFee > 0 ? `₹${deliveryFee}` : 'FREE'}</span>
                 </div>
+                {(() => {
+                  const taxesAndCharges = Number(activeOrderData.tax || activeOrderData.taxes || activeOrderData.taxAmount || 0);
+                  const discount = Number(activeOrderData.discount || activeOrderData.couponDiscount || 0);
+                  const fee = Number(deliveryFee || 0);
+                  const accounted = itemTotal + fee + taxesAndCharges - discount;
+                  const diff = Math.round((Number(toCollect) - accounted) * 100) / 100;
+                  if (taxesAndCharges > 0) {
+                    return (
+                      <div className="flex justify-between text-gray-600 font-semibold">
+                        <span>Taxes & charges</span>
+                        <span className="text-gray-900 font-bold">₹{taxesAndCharges}</span>
+                      </div>
+                    );
+                  }
+                  if (diff > 0) {
+                    return (
+                      <div className="flex justify-between text-gray-600 font-semibold">
+                        <span>Taxes & fees</span>
+                        <span className="text-gray-900 font-bold">₹{diff.toFixed(2)}</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 <div className="flex justify-between text-sm font-extrabold text-gray-900 pt-1 border-t border-gray-100">
-                  <span>Order Total (Paid Online)</span>
+                  <span>Order Total ({activeOrderData.paymentMethod === 'COD' ? 'Cash on Delivery' : 'Paid Online'})</span>
                   <span>₹{toCollect}</span>
                 </div>
               </div>
@@ -1072,122 +1115,140 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
           </div>
 
           {/* Only show review actions while payment still needs a decision. */}
-          {canReviewPayment && <div className="space-y-2.5">
-            <p className="text-[11px] font-extrabold uppercase tracking-wider text-gray-400">
-              PAYMENT
-            </p>
+          {canReviewPayment && !readOnly && (
+            <div className="space-y-2.5 pt-2 border-t border-gray-100">
+              <p className="text-[11px] font-extrabold uppercase tracking-wider text-gray-400">
+                PAYMENT VERIFICATION
+              </p>
 
-            {/* Payment verification action buttons */}
-            <div className="flex items-center gap-2.5">
-              <button
-                onClick={handleVerifyPayment}
-                disabled={loading}
-                className="flex-1 py-2.5 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors text-center"
-              >
-                Verify
-              </button>
+              {/* Payment verification action buttons */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  onClick={handleVerifyPayment}
+                  disabled={loading}
+                  className="w-full py-2.5 bg-[#0A7C47] hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition-colors text-center cursor-pointer"
+                >
+                  Verify
+                </button>
 
-              <button
-                onClick={handleRejectPayment}
-                disabled={loading}
-                className="px-4 py-2.5 border border-rose-300 text-rose-600 hover:bg-rose-50 font-bold text-xs rounded-xl transition-colors"
-              >
-                Reject
-              </button>
+                <button
+                  onClick={handleRejectPayment}
+                  disabled={loading}
+                  className="w-full py-2.5 border border-rose-300 text-rose-600 hover:bg-rose-50 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                >
+                  Reject
+                </button>
+              </div>
             </div>
-          </div>}
+          )}
 
-            <div className="mt-4 pt-3 border-t border-gray-100 space-y-2">
-              <div className="flex items-center justify-between">
+          {/* Delivery Partner Assignment Section */}
+          <div className="pt-3 border-t border-gray-100 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Truck size={14} className="text-gray-500 shrink-0" />
                 <span className="text-xs font-bold text-gray-800">
                   Assign Delivery Partner (On Duty only):
                 </span>
-                {activeOrderData.deliveryAcceptanceStatus === 'ACCEPTED' && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    Accepted
-                  </span>
-                )}
-                {activeOrderData.deliveryAcceptanceStatus === 'REJECTED' && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200">
-                    Assignment Rejected
-                  </span>
-                )}
-                {activeOrderData.deliveryAcceptanceStatus === 'PENDING' && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200 animate-pulse">
-                    Pending Acceptance
-                  </span>
-                )}
               </div>
-
-              {(() => {
-                const s = (activeOrderData.status || order.status || '').toUpperCase();
-                const isOrderNew = s === 'ORDER_PLACED' || s === 'NEW' || s === 'PLACED' || !s;
-                const isPaymentPending = activeOrderData.paymentMethod !== 'COD' && activeOrderData.paymentMethod !== 'FREE_REPLACEMENT' && activeOrderData.paymentStatus !== 'PAID';
-                const isAwaitingRedeliveryConfirm = activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'AWAITING_CUSTOMER_CONFIRMATION';
-                const isRedeliveryDeclined = activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'DECLINED';
-
-                return (
-                  <select
-                    disabled={assigningPartner || isOrderNew || isPaymentPending || isAwaitingRedeliveryConfirm || isRedeliveryDeclined || activeOrderData.status === 'DELIVERED'}
-                    title={
-                      isRedeliveryDeclined
-                        ? 'Customer declined redelivery'
-                        : isAwaitingRedeliveryConfirm
-                        ? 'Customer has not confirmed availability yet'
-                        : isPaymentPending
-                        ? 'Verify payment first before assigning partner'
-                        : isOrderNew
-                        ? 'Accept / approve order first before assigning partner'
-                        : ''
-                    }
-                    value={activeOrderData.deliveryAcceptanceStatus === 'REJECTED' ? '' : (activeOrderData.assignedPartnerId || '')}
-                    onChange={(e) => handleAssignPartnerModal(e.target.value)}
-                    className={`w-full px-3 py-2 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-600 focus:bg-white shadow-2xs border ${
-                      isOrderNew || isPaymentPending || isAwaitingRedeliveryConfirm || isRedeliveryDeclined
-                        ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-75'
-                        : activeOrderData.deliveryAcceptanceStatus === 'REJECTED'
-                        ? 'border-rose-300 bg-rose-50 text-rose-900 font-bold cursor-pointer'
-                        : 'border-gray-200 bg-gray-50 text-gray-800 cursor-pointer'
-                    }`}
-                  >
-                    <option value="">
-                      {isRedeliveryDeclined
-                        ? 'Redelivery Declined by Customer'
-                        : isAwaitingRedeliveryConfirm
-                        ? 'Awaiting customer confirmation to assign partner...'
-                        : isPaymentPending
-                        ? 'Verify payment first to assign partner...'
-                        : isOrderNew
-                        ? 'Approve order first to assign partner...'
-                        : activeOrderData.deliveryAcceptanceStatus === 'REJECTED'
-                        ? 'Rejected — Re-assign new partner...'
-                        : activeOrderData.assignedPartnerId
-                        ? 'Re-assign partner...'
-                        : 'Select on-duty partner...'}
-                    </option>
-                    {partners.map((p) => {
-                      const isOffDuty = p.isOnDuty === false || p.isActive === false;
-                      return (
-                        <option key={p.id} value={p.id} disabled={isOffDuty}>
-                          {p.name} · {p.mobile || p.phone || ''} {isOffDuty ? '(OFF DUTY)' : '(ON DUTY)'}
-                        </option>
-                      );
-                    })}
-                  </select>
-                );
-              })()}
-
-              {activeOrderData.deliveryAcceptanceStatus === 'REJECTED' ? (
-                <p className="text-[11px] text-rose-700 font-semibold flex items-center gap-1.5">
-                  <AlertCircle size={14} className="text-rose-600 shrink-0 inline" />
-                  <span>Previous assignment was rejected by {activeOrderData.rejectedByPartnerName || activeOrderData.deliveryBoyName || 'partner'}. Select an on-duty partner to re-assign.</span>
-                </p>
-              ) : activeOrderData.deliveryBoyName ? (
-                <p className="text-[11px] text-gray-500 font-medium">
-                  Assigned to <span className="font-bold text-gray-800">{activeOrderData.deliveryBoyName}</span> ({activeOrderData.deliveryBoyPhone || 'Phone unavailable'})
-                </p>
-              ) : null}
+              {activeOrderData.deliveryAcceptanceStatus === 'ACCEPTED' && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <Check size={11} strokeWidth={2.5} /> Accepted
+                </span>
+              )}
+              {activeOrderData.deliveryAcceptanceStatus === 'REJECTED' && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200">
+                  <XCircle size={11} /> Assignment Rejected
+                </span>
+              )}
+              {activeOrderData.deliveryAcceptanceStatus === 'PENDING' && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200 animate-pulse">
+                  <Clock size={11} /> Pending Acceptance
+                </span>
+              )}
             </div>
+
+            {activeOrderData.deliveryBoyName && (
+              <div className="p-2.5 bg-gray-50 border border-gray-200/80 rounded-xl flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center text-xs shrink-0">
+                    {activeOrderData.deliveryBoyName.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="truncate">
+                    <p className="font-bold text-gray-900 truncate">{activeOrderData.deliveryBoyName}</p>
+                    <p className="text-[11px] text-gray-500 font-mono">{activeOrderData.deliveryBoyPhone || 'Phone unavailable'}</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 shrink-0">
+                  Assigned
+                </span>
+              </div>
+            )}
+
+            {!readOnly && (() => {
+              const s = (activeOrderData.status || order.status || '').toUpperCase();
+              const isOrderNew = s === 'ORDER_PLACED' || s === 'NEW' || s === 'PLACED' || !s;
+              const isPaymentPending = activeOrderData.paymentMethod !== 'COD' && activeOrderData.paymentMethod !== 'FREE_REPLACEMENT' && activeOrderData.paymentStatus !== 'PAID';
+              const isAwaitingRedeliveryConfirm = activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'AWAITING_CUSTOMER_CONFIRMATION';
+              const isRedeliveryDeclined = activeOrderData.isRedelivery && activeOrderData.redeliveryStatus === 'DECLINED';
+
+              return (
+                <select
+                  disabled={assigningPartner || isOrderNew || isPaymentPending || isAwaitingRedeliveryConfirm || isRedeliveryDeclined || activeOrderData.status === 'DELIVERED'}
+                  title={
+                    isRedeliveryDeclined
+                      ? 'Customer declined redelivery'
+                      : isAwaitingRedeliveryConfirm
+                      ? 'Customer has not confirmed availability yet'
+                      : isPaymentPending
+                      ? 'Verify payment first before assigning partner'
+                      : isOrderNew
+                      ? 'Approve order first before assigning partner'
+                      : ''
+                  }
+                  value={activeOrderData.deliveryAcceptanceStatus === 'REJECTED' ? '' : (activeOrderData.assignedPartnerId || '')}
+                  onChange={(e) => handleAssignPartnerModal(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-xl text-xs font-bold focus:outline-none focus:border-emerald-600 focus:bg-white shadow-2xs border ${
+                    isOrderNew || isPaymentPending || isAwaitingRedeliveryConfirm || isRedeliveryDeclined
+                      ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed opacity-75'
+                      : activeOrderData.deliveryAcceptanceStatus === 'REJECTED'
+                      ? 'border-rose-300 bg-rose-50 text-rose-900 font-bold cursor-pointer'
+                      : 'border-gray-200 bg-gray-50 text-gray-800 cursor-pointer'
+                  }`}
+                >
+                  <option value="">
+                    {isRedeliveryDeclined
+                      ? 'Redelivery Declined by Customer'
+                      : isAwaitingRedeliveryConfirm
+                      ? 'Awaiting customer confirmation to assign partner...'
+                      : isPaymentPending
+                      ? 'Verify payment first to assign partner...'
+                      : isOrderNew
+                      ? 'Approve order first to assign partner...'
+                      : activeOrderData.deliveryAcceptanceStatus === 'REJECTED'
+                      ? 'Rejected — Re-assign new partner...'
+                      : activeOrderData.assignedPartnerId
+                      ? 'Re-assign partner...'
+                      : 'Select on-duty partner...'}
+                  </option>
+                  {partners.map((p) => {
+                    const isOffDuty = p.isOnDuty === false || p.isActive === false;
+                    return (
+                      <option key={p.id} value={p.id} disabled={isOffDuty}>
+                        {p.name} · {p.mobile || p.phone || ''} {isOffDuty ? '(OFF DUTY)' : '(ON DUTY)'}
+                      </option>
+                    );
+                  })}
+                </select>
+              );
+            })()}
+
+            {activeOrderData.deliveryAcceptanceStatus === 'REJECTED' ? (
+              <p className="text-[11px] text-rose-700 font-semibold flex items-center gap-1.5">
+                <AlertCircle size={14} className="text-rose-600 shrink-0 inline" />
+                <span>Previous assignment was rejected by {activeOrderData.rejectedByPartnerName || activeOrderData.deliveryBoyName || 'partner'}. Select an on-duty partner to re-assign.</span>
+              </p>
+            ) : null}
           </div>
 
           {/* INTERNAL NOTE Section */}
@@ -1201,34 +1262,38 @@ export default function OrderDetailsModal({ order, partners: initialPartners = [
                   Visible to store operators and staff only
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={handleSaveNote}
-                disabled={savingNote}
-                className="px-3.5 py-1.5 rounded-xl bg-gray-900 hover:bg-black active:bg-gray-950 text-white text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-              >
-                {noteSaved ? (
-                  <>
-                    <Check size={13} className="text-emerald-400" />
-                    <span>Saved</span>
-                  </>
-                ) : savingNote ? (
-                  <span>Saving...</span>
-                ) : (
-                  <span>Save note</span>
-                )}
-              </button>
+              {!readOnly && (
+                <button
+                  type="button"
+                  onClick={handleSaveNote}
+                  disabled={savingNote}
+                  className="px-3.5 py-1.5 rounded-xl bg-gray-900 hover:bg-black active:bg-gray-950 text-white text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  {noteSaved ? (
+                    <>
+                      <Check size={13} className="text-emerald-400" />
+                      <span>Saved</span>
+                    </>
+                  ) : savingNote ? (
+                    <span>Saving...</span>
+                  ) : (
+                    <span>Save note</span>
+                  )}
+                </button>
+              )}
             </div>
             <textarea
               rows={3}
               value={internalNote}
+              disabled={readOnly}
               onChange={(e) => setInternalNote(e.target.value)}
               placeholder="e.g. Customer asked to call before arriving, or ring bell twice"
-              className="w-full p-3 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all font-medium resize-y"
+              className="w-full p-3 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all font-medium resize-y disabled:bg-gray-100 disabled:cursor-not-allowed"
             />
           </div>
         </div>
       </div>
+    </div>
 
       {/* Cancellation Reason Modal */}
       {showCancelModal && (
